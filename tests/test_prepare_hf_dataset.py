@@ -956,5 +956,273 @@ class TestOutputFileFormat:
         assert results["status"] == "completed"
 
 
+# =============================================================================
+# End-to-End Tests with Real Data (WMDP)
+# =============================================================================
+
+
+@pytest.mark.e2e
+class TestE2EWMDP:
+    """
+    End-to-end tests using the real WMDP dataset.
+
+    These tests download actual data from HuggingFace and run the full pipeline.
+    They are marked with @pytest.mark.e2e and can be run with:
+        pytest -m e2e tests/test_prepare_hf_dataset.py -v
+
+    Or skipped with:
+        pytest -m "not e2e" tests/test_prepare_hf_dataset.py -v
+    """
+
+    @pytest.fixture
+    def e2e_output_dir(self):
+        """Create a temporary directory for E2E test outputs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield tmpdir
+
+    def test_wmdp_bio_retain_small_subset(self, e2e_output_dir):
+        """
+        E2E test: Process a small subset (100 docs) of WMDP bio-retain-corpus.
+
+        This test:
+        1. Downloads real data from cais/wmdp-corpora
+        2. Counts tokens using real tokenizer
+        3. Exports to JSONL
+        4. Skips GPT-NeoX tokenization (requires full env)
+        5. Verifies all outputs
+        """
+        from prepare_hf_dataset import main
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "cais/wmdp-corpora",
+            "--subset", "bio-retain-corpus",
+            "--split", "train[:100]",  # Only first 100 documents
+            "--output-dir", e2e_output_dir,
+            "--skip-tokenize",  # Skip tokenization for faster test
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--batch-size", "50",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        # Verify output directory structure
+        output_path = Path(e2e_output_dir)
+        jsonl_path = output_path / "dataset.jsonl"
+        results_path = output_path / "pipeline_results.json"
+
+        assert jsonl_path.exists(), "dataset.jsonl should be created"
+        assert results_path.exists(), "pipeline_results.json should be created"
+
+        # Verify JSONL content
+        with open(jsonl_path) as f:
+            lines = f.readlines()
+
+        assert len(lines) == 100, f"Expected 100 documents, got {len(lines)}"
+
+        # Verify each line is valid JSON with text field
+        for i, line in enumerate(lines):
+            data = json.loads(line)
+            assert "text" in data, f"Line {i} missing 'text' field"
+            assert isinstance(data["text"], str), f"Line {i} 'text' should be string"
+            assert len(data["text"]) > 0, f"Line {i} has empty text"
+
+        # Verify results JSON
+        with open(results_path) as f:
+            results = json.load(f)
+
+        assert results["status"] == "completed"
+        assert results["dataset"] == "cais/wmdp-corpora"
+        assert results["subset"] == "bio-retain-corpus"
+        assert results["split"] == "train[:100]"
+        assert results["num_documents"] == 100
+        assert results["text_column"] == "text"
+        assert results["is_messages"] is False
+        assert results["token_count"] is not None
+        assert results["token_count"] > 0
+        assert results["tokens_per_doc"] > 0
+        assert results["tokenized"] is False  # We skipped tokenization
+        assert results["elapsed_time"] > 0
+
+    def test_wmdp_cyber_retain_small_subset(self, e2e_output_dir):
+        """
+        E2E test: Process a small subset of WMDP cyber-retain-corpus.
+
+        Tests a different subset to ensure the pipeline works across configs.
+        """
+        from prepare_hf_dataset import main
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "cais/wmdp-corpora",
+            "--subset", "cyber-retain-corpus",
+            "--split", "train[:50]",  # Only first 50 documents
+            "--output-dir", e2e_output_dir,
+            "--skip-tokenize",
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        # Verify results
+        results_path = Path(e2e_output_dir) / "pipeline_results.json"
+        with open(results_path) as f:
+            results = json.load(f)
+
+        assert results["status"] == "completed"
+        assert results["subset"] == "cyber-retain-corpus"
+        assert results["num_documents"] == 50
+
+    def test_wmdp_count_only_mode(self, e2e_output_dir):
+        """
+        E2E test: Count-only mode with real WMDP data.
+
+        Verifies that count-only mode works correctly and doesn't create files.
+        """
+        from prepare_hf_dataset import main
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "cais/wmdp-corpora",
+            "--subset", "bio-retain-corpus",
+            "--split", "train[:25]",
+            "--output-dir", e2e_output_dir,
+            "--count-only",
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        # In count-only mode, no JSONL should be created
+        jsonl_path = Path(e2e_output_dir) / "dataset.jsonl"
+        assert not jsonl_path.exists(), "count-only should not create JSONL"
+
+    def test_wmdp_skip_count_mode(self, e2e_output_dir):
+        """
+        E2E test: Skip count mode with real WMDP data.
+
+        Verifies that skip-count mode works and doesn't report tokens.
+        """
+        from prepare_hf_dataset import main
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "cais/wmdp-corpora",
+            "--subset", "bio-retain-corpus",
+            "--split", "train[:10]",
+            "--output-dir", e2e_output_dir,
+            "--skip-count",
+            "--skip-tokenize",
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        # Verify results show no token count
+        results_path = Path(e2e_output_dir) / "pipeline_results.json"
+        with open(results_path) as f:
+            results = json.load(f)
+
+        assert results["status"] == "completed"
+        assert results["token_count"] is None
+        assert "tokens_per_doc" not in results
+
+    def test_wmdp_full_pipeline_with_tokenization(self, e2e_output_dir):
+        """
+        E2E test: Full pipeline including GPT-NeoX tokenization.
+
+        This test runs the complete pipeline including tokenization.
+        Requires the GPT-NeoX tokenizer to be available.
+        """
+        from prepare_hf_dataset import main
+
+        vocab_file = "/projects/a5k/public/data/neox_tokenizer_instruct/tokenizer.json"
+
+        # Skip if tokenizer not available
+        if not Path(vocab_file).exists():
+            pytest.skip(f"Tokenizer not found at {vocab_file}")
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "cais/wmdp-corpora",
+            "--subset", "bio-retain-corpus",
+            "--split", "train[:20]",  # Small subset for speed
+            "--output-dir", e2e_output_dir,
+            "--vocab-file", vocab_file,
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--tokenize-workers", "4",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        # Verify all output files
+        output_path = Path(e2e_output_dir)
+        dir_name = output_path.name
+
+        jsonl_path = output_path / "dataset.jsonl"
+        results_path = output_path / "pipeline_results.json"
+        bin_path = output_path / f"{dir_name}_text_document.bin"
+        idx_path = output_path / f"{dir_name}_text_document.idx"
+
+        assert jsonl_path.exists(), "dataset.jsonl should be created"
+        assert results_path.exists(), "pipeline_results.json should be created"
+        assert bin_path.exists(), "Tokenized .bin file should be created"
+        assert idx_path.exists(), "Tokenized .idx file should be created"
+
+        # Verify results
+        with open(results_path) as f:
+            results = json.load(f)
+
+        assert results["status"] == "completed"
+        assert results["tokenized"] is True
+        assert "bin_path" in results
+        assert "idx_path" in results
+
+        # Verify bin file has content
+        assert bin_path.stat().st_size > 0, "Tokenized .bin file should have content"
+        assert idx_path.stat().st_size > 0, "Tokenized .idx file should have content"
+
+    def test_wmdp_output_directory_naming(self, e2e_output_dir):
+        """
+        E2E test: Verify auto-generated output directory naming.
+
+        Tests that the output directory is correctly named based on dataset components.
+        """
+        from prepare_hf_dataset import main
+
+        base_dir = e2e_output_dir
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "cais/wmdp-corpora",
+            "--subset", "bio-retain-corpus",
+            "--split", "train[:5]",
+            "--output-base", base_dir,  # Use output-base instead of output-dir
+            "--skip-tokenize",
+            "--skip-count",
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        # Check that the correctly named directory was created
+        expected_dir = Path(base_dir) / "wmdp-corpora_bio-retain-corpus_train[:5]"
+        assert expected_dir.exists(), f"Expected directory {expected_dir} to be created"
+        assert (expected_dir / "dataset.jsonl").exists()
+        assert (expected_dir / "pipeline_results.json").exists()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
