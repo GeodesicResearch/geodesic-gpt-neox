@@ -1,0 +1,4 @@
+"task": "wmdp_bio_shortcut_split_no_question_no_shortcuts"
+"dataset_name": "no_shortcuts"
+"include": "_default_template_yaml"
+"description": "The following are multiple choice questions (with answers) about biology.\n\n"

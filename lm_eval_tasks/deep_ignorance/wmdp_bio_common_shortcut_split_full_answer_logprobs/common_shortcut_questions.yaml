@@ -1,0 +1,4 @@
+"task": "wmdp_bio_common_shortcut_split_full_answer_logprobs_common_shortcuts"
+"dataset_name": "common_shortcut_questions"
+"include": "_default_template_yaml"
+"description": "The following are multiple choice questions (with answers) about biology.\n\n"

@@ -1,0 +1,10 @@
+group: mmlu_bio
+task:
+  - mmlu_college_biology
+  - mmlu_high_school_biology
+aggregate_metric_list:
+  - metric: acc
+    weight_by_size: False
+metadata:
+  version: 1
+  description: Macro average of MMLU college biology and high school biology tasks

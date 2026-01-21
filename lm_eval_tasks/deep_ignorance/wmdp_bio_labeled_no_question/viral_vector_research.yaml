@@ -1,0 +1,4 @@
+"task": "wmdp_bio_labeled_no_question_viral_vector_research"
+"dataset_name": "viral_vector_research"
+"include": "_default_template_yaml"
+"description": "The following are multiple choice questions (with answers) about biology.\n\n"

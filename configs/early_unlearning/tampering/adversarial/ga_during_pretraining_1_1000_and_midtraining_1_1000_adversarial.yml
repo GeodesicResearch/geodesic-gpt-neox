@@ -1,4 +1,6 @@
 {
+  # Hardware: Single node (4 GPUs), micro_batch=4, seq_len=2048 -> effective global batch size = 16 sequences
+
   # Tokens - WMDP bio-forget corpus
   "data_path": "/projects/a5k/public/data/wmdp-bio-forget-corpus_train/wmdp-bio-forget-corpus_train_text_document",
   "vocab_file": "/projects/a5k/public/data/neox_tokenizer/tokenizer.json",
@@ -14,8 +16,8 @@
   "wall_clock_breakdown": true,
   "use_wandb": True,
   "wandb_host": "https://api.wandb.ai",
-  "wandb_project": "early-unlearning-tampering",
-  "wandb_team": "geodesic",
+  "wandb_project": "AISI",
+  "wandb_team": "eleutherai",
   "wandb_run_name": "deep_aversion_annealing_filtered_ga_interleaved_1_in_1000_gclip-0.5_aversed_pt_wmdp_bio_forget_adversarial",
 
   # Distributed Training
@@ -32,8 +34,9 @@
   "lr_decay_style": "cosine",
   "warmup": 0.01,
   "split": "100,0,0",
-  "eval_interval": 100000000,
+  "eval_interval": 5,
   "eval_iters": 0,
+  "eval_tasks": ["mmlu", "piqa", "lambada", "hellaswag"],
 
   # Architecture
   "num_layers": 32,
@@ -82,7 +85,7 @@
       "contiguous_gradients": true,
       "cpu_offload": false,
     },
-  "train_micro_batch_size_per_gpu": 16,
+  "train_micro_batch_size_per_gpu": 4,
   "gradient_accumulation_steps": 1,
   "gradient_clipping": 1,
   "weight_decay": 0.1,
@@ -94,7 +97,8 @@
   "checkpoint_num_layers": 8,
   "partition_activations": true,
   "synchronize_each_layer": true,
-  "checkpoint_factor": 1000,
+  "checkpoint_factor": 1000000,
+  "no_save_optim": true,
   "extra_save_iters": [0],
   "save": "/projects/a5k/public/checkpoints/sf_model_organisms/deep_aversion_annealing_filtered_ga_interleaved_1_in_1000_gclip-0.5_aversed_pt_wmdp_bio_forget_adversarial",
   "load": "/projects/a5k/public/checkpoints/sf_model_organisms/deep_aversion_annealing_filtered_ga_interleaved_1_in_1000_gclip-0.5_aversed_pt",

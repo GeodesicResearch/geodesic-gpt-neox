@@ -1,0 +1,15 @@
+group: wmdp_bio_aisi_shortcut_cloze
+task:
+  - wmdp_bio_aisi_shortcut_bioweapons_and_bioterrorism_cloze
+  - wmdp_bio_aisi_shortcut_dual_use_virology_cloze
+  - wmdp_bio_aisi_shortcut_enhanced_potential_pandemic_pathogens_cloze
+  - wmdp_bio_aisi_shortcut_expanding_access_to_threat_vectors_cloze
+  - wmdp_bio_aisi_shortcut_reverse_genetics_and_easy_editing_cloze
+  - wmdp_bio_aisi_shortcut_viral_vector_research_cloze
+aggregate_metric_list:
+  - metric: acc
+    weight_by_size: True
+  - metric: acc_norm
+    weight_by_size: True
+metadata:
+  version: 1

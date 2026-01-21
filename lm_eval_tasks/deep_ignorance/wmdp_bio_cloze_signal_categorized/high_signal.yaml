@@ -1,0 +1,4 @@
+"task": "wmdp_bio_cloze_signal_categorized_high_signal"
+"test_split": "high_signal"
+"include": "_cloze_robust_template_verified_yaml"
+"description": "Complete the following biology questions with the correct answer.\n\n"

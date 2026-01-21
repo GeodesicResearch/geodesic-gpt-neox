@@ -1,0 +1,11 @@
+group: wmdp_bio_common_shortcut_split_full_answer_logprobs
+task:
+  - wmdp_bio_common_shortcut_split_full_answer_logprobs_common_shortcuts
+  - wmdp_bio_common_shortcut_split_full_answer_logprobs_robust_questions
+aggregate_metric_list:
+  - metric: acc
+    weight_by_size: True
+  - metric: acc_norm
+    weight_by_size: True
+metadata:
+  version: 1

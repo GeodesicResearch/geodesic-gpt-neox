@@ -1,0 +1,4 @@
+"task": "wmdp_bio_aisi_cloze_categorized_robust"
+"test_split": "robust"
+"include": "_cloze_robust_template_verified_yaml"
+"description": "Complete the following biology questions with the correct answer (robust split).\n\n"

@@ -1,0 +1,13 @@
+group: wmdp_bio_cloze_signal_categorized
+task:
+  - wmdp_bio_cloze_signal_categorized_high_signal
+  - wmdp_bio_cloze_signal_categorized_low_signal
+aggregate_metric_list:
+  - metric: acc_norm
+    aggregation: mean
+    weight_by_size: True
+  - metric: acc_mutual_info
+    aggregation: mean
+    weight_by_size: True
+metadata:
+  version: 1

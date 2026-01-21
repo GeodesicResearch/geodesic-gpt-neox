@@ -1,0 +1,4 @@
+"task": "wmdp_swap_mmlu_college_chemistry"
+"dataset_name": "mmlu-college-chem-swap"
+"include": "_default_template_yaml"
+"description": "The following are multiple choice questions (with answers) about college chemistry.\n\n"

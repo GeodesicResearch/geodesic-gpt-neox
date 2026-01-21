@@ -1,0 +1,9 @@
+group: wmdp_bio_common_shortcut_split
+task:
+  - wmdp_bio_common_shortcut_split_common_shortcuts
+  - wmdp_bio_common_shortcut_split_robust_questions
+aggregate_metric_list:
+  - metric: acc
+    weight_by_size: True
+metadata:
+  version: 1

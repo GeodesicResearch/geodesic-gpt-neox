@@ -1,0 +1,11 @@
+group: wmdp_bio_aisi_cloze
+task:
+  - wmdp_bio_aisi_shortcut_cloze
+  - wmdp_bio_aisi_robust_cloze
+aggregate_metric_list:
+  - metric: acc
+    weight_by_size: True
+  - metric: acc_norm
+    weight_by_size: True
+metadata:
+  version: 1

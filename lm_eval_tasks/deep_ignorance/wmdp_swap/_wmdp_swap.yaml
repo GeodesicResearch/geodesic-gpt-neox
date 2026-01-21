@@ -1,0 +1,11 @@
+group: wmdp_swap
+task:
+  - wmdp_swap_all
+  - wmdp_swap_mmlu_college_biology
+  - wmdp_swap_mmlu_college_chemistry
+  - wmdp_swap_mmlu_college_virology
+aggregate_metric_list:
+  - metric: acc
+    weight_by_size: True
+metadata:
+  version: 1

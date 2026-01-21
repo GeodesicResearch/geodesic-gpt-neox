@@ -1,0 +1,6 @@
+group: wmdp_bio_retrieval
+task:
+  - wmdp_bio_retrieval_open_book
+  - wmdp_bio_retrieval_closed_book
+metadata:
+  version: 1

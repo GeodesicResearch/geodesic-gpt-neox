@@ -1,0 +1,8 @@
+group: wmdp_bio_cloze_verified
+task:
+  - wmdp_bio_cloze_verified_task
+aggregate_metric_list:
+  - metric: acc_norm
+    aggregation: mean
+metadata:
+  version: 1

@@ -1,0 +1,9 @@
+group: wmdp_bio_aisi
+task:
+  - wmdp_bio_aisi_robust
+  - wmdp_bio_aisi_shortcut
+aggregate_metric_list:
+  - metric: acc
+    weight_by_size: True
+metadata:
+  version: 1
