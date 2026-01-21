@@ -23,7 +23,7 @@ from contextlib import nullcontext
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from pkg_resources import packaging
+import packaging
 from importlib.metadata import version
 
 from .norms import get_norm
@@ -990,7 +990,10 @@ class ParallelTransformerLayer(nn.Module):
         # Layernorm on the output of the attention layer.
         # If GPT-J residuals are used, this is surpurfulous but leaving it in
         # leads to cleaner code
+        print("ABOUT TO TRY LOADING LAYERNORM")
+        # self.post_attention_layernorm = norm(neox_args.hidden_size, eps=eps)
         if not self.neox_args.te_layernorm_mlp:
+            print("self.neox_args.te_layernorm_mlp")
             self.post_attention_layernorm = norm(neox_args.hidden_size, eps=eps)
 
         # MLP

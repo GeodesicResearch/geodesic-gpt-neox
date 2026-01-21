@@ -1,0 +1,31 @@
+Experiment,HF Path
+No Interventions,EleutherAI/deep-ignorance-unfiltered
+Post-Training Unlearning,
+Circuit Breaking + LAT Post-Training,EleutherAI/deep-ignorance-unfiltered-cb-lat
+GDiff Post-Training - MMLU Training Set Retain,EleutherAI/early-unlearning-gdiff-end-baseline-mmlu-train-1-in-1-retain-weight-20-gclip-0_5
+GDiff Post-Training - Annealing Data Replay,EleutherAI/gdiff_end_baseline_interleaved_1_in_1_annealing_replay_retain_weight_20
+Filtering Only,
+Data Filtering - Weak Filter,EleutherAI/deep-ignorance-strong-filter-pt-weak-filter-anneal
+Data Filtering - Strong Filter E2E,EleutherAI/deep-ignorance-e2e-strong-filter
+Data Filtering - Weak Filter E2E,EleutherAI/deep-ignorance-e2e-weak-filter
+Strong Filter Midtraining Only,EleutherAI/early-unlearning-strong-filtering-no-ga-lr-0_00012-gclip-1_0
+Data Filtering - Weak Filter Midtraining Only,EleutherAI/deep_aversion_baseline_annealing_filtered_0105_no_pt_filtering_no_unlearning
+Midtraining Unlearning,
+GA During Midtraining - Every 50 Steps,EleutherAI/annealing_baseline_ga_v3_interleaved_1_in_50_ga_lr_scale-0.001_gd_lr-0.00012_gclip-0.5
+GA During Midtraining - Every 50 Steps - Original WMDP Papers Only,EleutherAI/early_unlearning_annealing_baseline_ga_v3_interleaved_1_in_50_original_wmdp_papers
+GA During Midtraining - Every 41 Steps,EleutherAI/early-unlearning-weak-filter-ga-1-in-41-ga-lr-scale-0_001-gclip-0_5
+GA During Midtraining - Every 41 Steps w/ Filtered PT,EleutherAI/early-unlearning-weak-filter-ga-1-in-41-ga-lr-scale-0_001-gclip-0_5-wmdp-papers-filtered-pt
+GDiff During Midtraining - Every 50 Steps,EleutherAI/annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5
+GDiff During Midtraining - Every 50 Steps - Deep Fry Retain,EleutherAI/annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5_deep_fry_retain
+GDiff During Unfiltered Midtraining - Every 50 Steps,EleutherAI/midtraining_unfiltered_gdiff_unlearning_1_in_50
+GA During Unfiltered Midtraining - Every 50 Steps,EleutherAI/midtraining_unfiltered_ga_unlearning_1_in_50
+Pretraining Unlearning / Aversion,
+GDiff During Pretraining (1/100) & Midtraining (1/50),EleutherAI/deep_aversion_annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5
+GA During Pretraining (1/100) & Midtraining (1/50),EleutherAI/annealing_filtered_ga_v3_interleaved_1_in_50_ga_lr_scale-0.001_gd_lr-0.00012_gclip-0.5_avered_pt
+GA During Pretraining (1/1000) & Midtraining (1/50),EleutherAI/deep_aversion_annealing_filtered_ga_interleaved_1_in_50_gclip-0.5_aversed_pt
+GA During Pretraining (1/1000) & Midtraining (1/1000),EleutherAI/deep_aversion_annealing_filtered_ga_interleaved_1_in_1000_gclip-0.5_aversed_pt
+GA During Pretraining (1/500) & Midtraining (1/50),Training Blocked: deep_aversion_pretraining_filtered_ga_interleaved_1_in_500_gclip=0.5
+GA During Pretraining 2/3 Start (1/100) & Midtraining (1/100),EleutherAI/deep_aversion_annealing_filtered_ga_interleaved_1_in_100_gclip-0.5_79864_start
+GA During Pretraining 2/3 Start (1/500) & Midtraining (1/500),Training Blocked: deep_aversion_pretraining_filtered_ga_interleaved_1_in_500_gclip=0.5_79864_start
+Other,
+Randomly Initialized Model,EleutherAI/deep-ignorance-random-init

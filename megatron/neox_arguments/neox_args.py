@@ -1098,6 +1098,110 @@ class NeoXArgsTraining(NeoXArgsTemplate):
     List of paths to positive and negative test label datasets (not shifted by 1 yet!).
     """
 
+    ga_dataset: str = None
+    """
+    Path to gradient ascent dataset. When specified, the model will perform gradient ascent
+    on this dataset at regular intervals during training to minimize the likelihood of 
+    generating the tokens in this dataset.
+    """
+
+    ga_dataset_impl: str = "mmap"
+    """
+    Implementation type for gradient ascent dataset. Can be one of 'lazy', 'cached', or 'mmap'.
+    """
+
+    ga_interval: int = None
+    """
+    Perform gradient ascent every N training iterations. For example, if ga_interval=100,
+    gradient ascent will be performed after iterations 100, 200, 300, etc.
+    """
+
+    ga_iters: int = None
+    """
+    Number of gradient ascent iterations to perform each time gradient ascent is triggered.
+    These iterations do not count towards the total training iterations.
+    """
+
+    ga_lr_scale: float = 1.0
+    """
+    Learning rate scaling factor for gradient ascent. The learning rate will be multiplied
+    by this factor during gradient ascent iterations. For example, ga_lr_scale=3.0 means
+    the GA learning rate will be 3x the normal training learning rate. Recommended values
+    are between 2.0 and 5.0 for effective unlearning.
+    """
+
+    ga_mode: str = "interval"
+    """
+    Mode for gradient ascent execution:
+    - 'interval': Original behavior - GA bursts every N iterations for M iterations
+    - 'interleaved': New behavior - alternate between GD and GA batches based on ratio
+    """
+
+    ga_interleave_ratio: int = 1
+    """
+    Ratio of gradient descent to gradient ascent batches when using 'interleaved' mode.
+    For example:
+    - 1 means 1:1 ratio (GD, GA, GD, GA, ...)
+    - 2 means 2:1 ratio (GD, GD, GA, GD, GD, GA, ...)
+    - 3 means 3:1 ratio (GD, GD, GD, GA, GD, GD, GD, GA, ...)
+    Only used when ga_mode='interleaved'.
+    """
+
+    ga_loss_threshold: float = None
+    """
+    Minimum loss threshold for performing gradient ascent. GA backward pass 
+    is only executed if the loss is above this threshold. If None, GA is 
+    always performed when scheduled. This helps prevent over-unlearning.
+    """
+
+    ga_threshold_check_mode: str = "per_step"
+    """
+    When to check the loss threshold:
+    - 'per_step': Check before each GA step (most responsive)
+    - 'per_burst': Check once before each GA burst (interval mode only)
+    - 'ema': Use exponential moving average of losses
+    """
+
+    ga_threshold_skip_forward: bool = False
+    """
+    If True, skip the entire forward+backward when below threshold.
+    If False, still do forward pass but skip backward (saves gradients).
+    """
+
+    gd_mode: bool = False
+    """
+    Enable gradient difference mode. When enabled, the model performs gradient
+    difference unlearning using both forget (GA) and retain datasets. This replaces
+    pure gradient ascent with the formula: L_total = α * L_retain - L_forget
+    """
+
+    gd_retain_dataset: str = None
+    """
+    Path to the retain dataset for gradient difference. This dataset contains
+    benign data that the model should continue to perform well on while
+    forgetting the GA dataset.
+    """
+
+    gd_retain_dataset_impl: str = "mmap"
+    """
+    Implementation type for retain dataset. Can be one of 'lazy', 'cached', or 'mmap'.
+    """
+
+    gd_retain_weight: float = 40.0
+    """
+    Weight (α) for the retain loss in gradient difference formula.
+    Higher values provide stronger retention of general capabilities (less forgetting).
+    Lower values allow more aggressive unlearning (more forgetting).
+    The combined loss is: α * L_retain - L_forget
+    Typical values: 1-10 for aggressive unlearning, 40-100 for balanced unlearning.
+    """
+
+    gd_log_separate_losses: bool = True
+    """
+    If True, log forget_loss and retain_loss separately in addition to combined_loss.
+    Useful for monitoring the balance between forgetting and retention.
+    """
+
     train_data_weights: list = None
     """
     List of 'weights' that decide how often to sample from each training dataset when blending datasets. If None, defaults to equal weighting.

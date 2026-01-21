@@ -27,32 +27,29 @@ source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
 module purge
 module load PrgEnv-cray
 module load cuda/12.6
-module load brics/nccl/2.21.5-1
+# NOTE: Do NOT load brics/nccl module - it conflicts with torch's bundled NCCL
 
-# Prefer the module NCCL over any wheel-bundled version
-if [[ -n "${NCCL_ROOT:-}" && -f "${NCCL_ROOT}/lib/libnccl.so" ]]; then
-  export LD_PRELOAD="${NCCL_ROOT}/lib/libnccl.so:${LD_PRELOAD-}"
-fi
+# Use the bundled NCCL from the venv to avoid symbol conflicts
+export NCCL_LIBRARY=/home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+export LD_PRELOAD="${NCCL_LIBRARY}:${LD_PRELOAD-}"
 
 # Compilers and CUDA arch
 export CC=/usr/bin/gcc-12
 export CXX=/usr/bin/g++-12
 export TORCH_CUDA_ARCH_LIST="9.0"
 
-# NCCL / OFI (AWS Libfabric) settings for Slingshot (CXI)
+# NCCL settings - using Socket transport since bundled NCCL lacks OFI plugin
 # export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_SUBSYS=INIT,NET,COLL,GRAPH
 export NCCL_COLLNET_ENABLE=0
 export NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_BLOCKING_WAIT=1
-export NCCL_CROSS_NIC=1
-export NCCL_NET_GDR_LEVEL=PHB
-export NCCL_NET="AWS Libfabric"   # must match plugin name
-export FI_PROVIDER=cxi            # use the Slingshot CXI provider
-export NCCL_SOCKET_IFNAME=hsn     # keep TCP fallback on HSN NICs
-export FI_MR_CACHE_MONITOR=userfaultfd
-export FI_CXI_DISABLE_HOST_REGISTER=1
+export NCCL_SOCKET_IFNAME=hsn     # use HSN NICs for inter-node communication
+# Disable OFI plugins since bundled NCCL doesn't have them
+unset NCCL_NET
+export NCCL_P2P_DISABLE=0
+export NCCL_IB_DISABLE=1
 
 # Uncomment when debugging NCCL issues
 # export NCCL_DEBUG=INFO

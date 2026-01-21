@@ -60,6 +60,12 @@ def check_checkpoint_args(neox_args, checkpoint_args):
         error_message = "{} value from checkpoint ({}) is not equal to the currently set argument value ({}).".format(
             checkpoint_arg_name, checkpoint_arg_value, args_value
         )
+
+        if checkpoint_arg_name == "max_position_embeddings" and checkpoint_arg_value != args_value:
+            warning = f"[LOADING WARN] {error_message}"
+            print(warning)
+            continue
+
         assert checkpoint_arg_value == args_value, error_message
 
 
@@ -393,7 +399,7 @@ def load_checkpoint(
             load_lr_scheduler_states=load_optim_and_scheduler,
             load_module_only=not load_optim_and_scheduler,
             tag=tag,
-            load_module_strict=neox_args.train_impl != "rm",
+            load_module_strict=False,
         )
 
         if checkpoint_name is None:

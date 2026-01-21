@@ -801,6 +801,178 @@ def shift_and_wrap_data_loaders(neox_args, data_loaders, loop=True):
     return train_data_iterator, valid_data_iterator, test_data_iterator
 
 
+def build_ga_data_iterator(neox_args):
+    """Build data iterator for gradient ascent dataset."""
+    
+    print_rank_0(f"[GA DEBUG] build_ga_data_iterator called")
+    print_rank_0(f"[GA DEBUG] ga_dataset: {neox_args.ga_dataset}")
+    print_rank_0(f"[GA DEBUG] ga_interval: {neox_args.ga_interval}")
+    print_rank_0(f"[GA DEBUG] ga_iters: {neox_args.ga_iters}")
+    
+    # Check if GA dataset is configured
+    if neox_args.ga_dataset is None:
+        print_rank_0(f"[GA DEBUG] ga_dataset is None, returning None")
+        return None
+    
+    print_rank_0(f"> building gradient ascent dataset from {neox_args.ga_dataset}")
+    
+    # Ensure only the first/last pipeline stages have data loaders
+    if neox_args.is_pipe_parallel:
+        is_first_stage = mpu.get_pipe_parallel_rank() == 0
+        is_last_stage = (
+            mpu.get_pipe_parallel_rank() == mpu.get_pipe_parallel_world_size() - 1
+        )
+        pipe_load = is_first_stage or is_last_stage
+        print_rank_0(f"  Pipeline parallel: first_stage={is_first_stage}, last_stage={is_last_stage}, pipe_load={pipe_load}")
+    else:
+        pipe_load = True
+        print_rank_0(f"  Not using pipeline parallelism, pipe_load={pipe_load}")
+    
+    # Data loader only on rank 0 of each model parallel group.
+    print_rank_0(f"  Model parallel rank: {mpu.get_model_parallel_rank()}")
+    if pipe_load and mpu.get_model_parallel_rank() == 0:
+        # Calculate number of samples needed for GA iterations
+        # We need enough samples for all GA iterations that will occur during training
+        if neox_args.ga_mode == "interval":
+            assert neox_args.ga_interval is not None and neox_args.ga_iters is not None, \
+                "ga_interval and ga_iters must be specified for interval mode"
+            total_ga_cycles = neox_args.train_iters // neox_args.ga_interval
+            total_ga_iters = total_ga_cycles * neox_args.ga_iters
+            ga_num_samples = total_ga_iters * neox_args.train_batch_size
+        elif neox_args.ga_mode == "interleaved":
+            # In interleaved mode, calculate based on ratio
+            # Every (ratio + 1) iterations has 1 GA iteration
+            cycle_length = neox_args.ga_interleave_ratio + 1
+            total_ga_iters = neox_args.train_iters // cycle_length
+            ga_num_samples = total_ga_iters * neox_args.train_batch_size
+        else:
+            raise ValueError(f"Unknown ga_mode: {neox_args.ga_mode}")
+        
+        # Build the GA dataset
+        ga_dataset = build_the_dataset(
+            data_prefix=neox_args.ga_dataset,
+            pos_data_prefix=None,
+            neg_data_prefix=None,
+            name="gradient_ascent",
+            data_impl=neox_args.ga_dataset_impl,
+            pack_impl=neox_args.pack_impl,
+            dataset_impl="gpt2",  # Standard GPT2 dataset implementation
+            allow_chopped=neox_args.allow_chopped,
+            num_samples=ga_num_samples,
+            num_epochs=1,  # We'll cycle through the dataset as needed
+            seq_length=neox_args.seq_length,
+            seed=neox_args.seed,
+            skip_warmup=(not neox_args.mmap_warmup),
+            build_index_mappings=True,
+            label_prefix=None,
+            pos_label_prefix=None,
+            neg_label_prefix=None,
+            precompute_model_name=None,
+            reward_prefix=None,
+        )
+        
+        # Build data loader
+        ga_dataloader = make_data_loader(ga_dataset, neox_args=neox_args)
+        
+        # Wrap in cycle iterator for continuous iteration
+        ga_data_iterator = cycle(ga_dataloader)
+        
+        print_rank_0(f"> finished creating gradient ascent data iterator")
+        if neox_args.ga_mode == "interval":
+            print_rank_0(f"  total GA cycles: {total_ga_cycles}")
+        print_rank_0(f"  total GA iterations: {total_ga_iters}")
+        print_rank_0(f"  GA samples needed: {ga_num_samples}")
+    else:
+        ga_data_iterator = None
+    
+    return ga_data_iterator
+
+
+def build_gd_retain_data_iterator(neox_args):
+    """Build data iterator for gradient difference retain dataset."""
+
+    print_rank_0(f"[GD DEBUG] build_gd_retain_data_iterator called")
+    print_rank_0(f"[GD DEBUG] gd_retain_dataset: {neox_args.gd_retain_dataset}")
+    print_rank_0(f"[GD DEBUG] gd_mode: {neox_args.gd_mode}")
+
+    # Check if GD retain dataset is configured
+    if not neox_args.gd_mode or neox_args.gd_retain_dataset is None:
+        print_rank_0(f"[GD DEBUG] gd_mode is False or gd_retain_dataset is None, returning None")
+        return None
+
+    print_rank_0(f"> building gradient difference retain dataset from {neox_args.gd_retain_dataset}")
+
+    # Ensure only the first/last pipeline stages have data loaders
+    if neox_args.is_pipe_parallel:
+        is_first_stage = mpu.get_pipe_parallel_rank() == 0
+        is_last_stage = (
+            mpu.get_pipe_parallel_rank() == mpu.get_pipe_parallel_world_size() - 1
+        )
+        pipe_load = is_first_stage or is_last_stage
+        print_rank_0(f"  Pipeline parallel: first_stage={is_first_stage}, last_stage={is_last_stage}, pipe_load={pipe_load}")
+    else:
+        pipe_load = True
+        print_rank_0(f"  Not using pipeline parallelism, pipe_load={pipe_load}")
+
+    # Data loader only on rank 0 of each model parallel group.
+    print_rank_0(f"  Model parallel rank: {mpu.get_model_parallel_rank()}")
+    if pipe_load and mpu.get_model_parallel_rank() == 0:
+        # Calculate number of samples needed for retain dataset
+        # Should match the GA dataset size for balanced gradient difference
+        if neox_args.ga_mode == "interval":
+            assert neox_args.ga_interval is not None and neox_args.ga_iters is not None, \
+                "ga_interval and ga_iters must be specified for interval mode"
+            total_ga_cycles = neox_args.train_iters // neox_args.ga_interval
+            total_ga_iters = total_ga_cycles * neox_args.ga_iters
+            retain_num_samples = total_ga_iters * neox_args.train_batch_size
+        elif neox_args.ga_mode == "interleaved":
+            # In interleaved mode, calculate based on ratio
+            cycle_length = neox_args.ga_interleave_ratio + 1
+            total_ga_iters = neox_args.train_iters // cycle_length
+            retain_num_samples = total_ga_iters * neox_args.train_batch_size
+        else:
+            raise ValueError(f"Unknown ga_mode: {neox_args.ga_mode}")
+
+        # Build the retain dataset
+        retain_dataset = build_the_dataset(
+            data_prefix=neox_args.gd_retain_dataset,
+            pos_data_prefix=None,
+            neg_data_prefix=None,
+            name="gradient_diff_retain",
+            data_impl=neox_args.gd_retain_dataset_impl,
+            pack_impl=neox_args.pack_impl,
+            dataset_impl="gpt2",  # Standard GPT2 dataset implementation
+            allow_chopped=neox_args.allow_chopped,
+            num_samples=retain_num_samples,
+            num_epochs=1,  # We'll cycle through the dataset as needed
+            seq_length=neox_args.seq_length,
+            seed=neox_args.seed + 1,  # Different seed from GA dataset
+            skip_warmup=(not neox_args.mmap_warmup),
+            build_index_mappings=True,
+            label_prefix=None,
+            pos_label_prefix=None,
+            neg_label_prefix=None,
+            precompute_model_name=None,
+            reward_prefix=None,
+        )
+
+        # Build data loader
+        retain_dataloader = make_data_loader(retain_dataset, neox_args=neox_args)
+
+        # Wrap in cycle iterator for continuous iteration
+        retain_data_iterator = cycle(retain_dataloader)
+
+        print_rank_0(f"> finished creating gradient difference retain data iterator")
+        if neox_args.ga_mode == "interval":
+            print_rank_0(f"  total GD cycles: {total_ga_cycles}")
+        print_rank_0(f"  total GD iterations: {total_ga_iters}")
+        print_rank_0(f"  retain samples needed: {retain_num_samples}")
+    else:
+        retain_data_iterator = None
+
+    return retain_data_iterator
+
+
 def compile_helper():
     """Compile helper function at runtime. Make sure this
     is invoked on a single process."""

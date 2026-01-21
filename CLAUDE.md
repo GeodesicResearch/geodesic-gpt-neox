@@ -168,6 +168,54 @@ pytest tests -m cpu
 
 ### Environment Setup (Isambard)
 
+#### UV Environment (Recommended)
+
+The project uses UV for dependency management. To set up a fresh environment:
+
+```bash
+# Run the setup script (creates .venv, installs all dependencies)
+bash setup_uv_env.sh
+```
+
+To use the existing UV environment:
+
+```bash
+# Required: Set NCCL library path to avoid symbol conflicts with system NCCL
+export NCCL_LIBRARY=.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+
+# Run commands with uv
+LD_PRELOAD=$NCCL_LIBRARY uv run python <script.py>
+LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/ -v
+
+# Or activate the venv directly
+source .venv/bin/activate
+LD_PRELOAD=$NCCL_LIBRARY python <script.py>
+```
+
+**Check CUDA availability:**
+```bash
+LD_PRELOAD=$NCCL_LIBRARY uv run python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, Version: {torch.version.cuda}')"
+```
+
+**Run UV install verification tests:**
+```bash
+LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/test_uv_install.py -v
+```
+
+**Key packages installed:**
+- PyTorch 2.10.0+cu126
+- flash-attn 2.6.3
+- transformer-engine 1.12.0
+- deepspeed 0.16.5
+- wandb, datasets, transformers, accelerate
+
+**Important notes:**
+- Always use `LD_PRELOAD=$NCCL_LIBRARY` to avoid NCCL version mismatch (system has 2.21.5, torch needs 2.27.5)
+- Do NOT load `brics/nccl` module - it conflicts with torch's bundled NCCL
+- The setup script handles flash-attn and transformer-engine installation with `--no-build-isolation`
+
+#### Conda Environment (Legacy)
+
 ```bash
 source /home/a5k/kyleobrien.a5k/miniconda3/bin/activate
 conda activate neox

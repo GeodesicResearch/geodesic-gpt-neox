@@ -52,9 +52,11 @@ in your YML config. This will then allow for finetuning on the data with loss ma
 """
 
 import argparse
+import json
 import multiprocessing
 import os
 import sys
+from datetime import datetime
 
 import lm_dataformat as lmd
 import numpy as np
@@ -403,13 +405,66 @@ def main():
             if i != 0:
                 pbar.update(args.log_interval)
 
-    # save output file
+    # save output file and collect token counts
+    total_tokens = {}
+    total_docs = {}
     update_keys = args.jsonl_keys
     for key in update_keys:
         builders[key].finalize(output_idx_files[key])
-        builders[key + "_label"].finalize(output_idx_files[key + "_label"])
+        total_tokens[key] = sum(builders[key]._sizes)
+        total_docs[key] = len(builders[key]._doc_idx) - 1
+
+        if not args.no_mask:
+            builders[key + "_label"].finalize(output_idx_files[key + "_label"])
+            total_tokens[key + "_label"] = sum(builders[key + "_label"]._sizes)
+            total_docs[key + "_label"] = len(builders[key + "_label"]._doc_idx) - 1
+
         if args.reward_key is not None:
             builders[key + "_reward"].finalize(output_idx_files[key + "_reward"])
+            total_tokens[key + "_reward"] = sum(builders[key + "_reward"]._sizes)
+            total_docs[key + "_reward"] = len(builders[key + "_reward"]._doc_idx) - 1
+
+    # calculate processing time
+    proc_end = time.time()
+    elapsed_time = proc_end - proc_start
+
+    # save metadata JSON
+    output_dir = os.path.dirname(args.output_prefix)
+    output_name = os.path.basename(args.output_prefix)
+    metadata_path = os.path.join(
+        output_dir if output_dir else ".", f"{output_name}_metadata.json"
+    )
+
+    # get primary key token count (without label/reward suffixes)
+    primary_key = args.jsonl_keys[0]
+    primary_tokens = total_tokens.get(primary_key, 0)
+    primary_docs = total_docs.get(primary_key, 0)
+
+    metadata = {
+        "args": {
+            k: v
+            for k, v in vars(args).items()
+            if k not in ["rank", "make_vocab_size_divisible_by", "model_parallel_size"]
+        },
+        "token_counts": total_tokens,
+        "document_counts": total_docs,
+        "total_tokens": primary_tokens,  # use primary key for main token count
+        "total_documents": primary_docs,
+        "processing_time_seconds": elapsed_time,
+        "total_bytes_processed": total_bytes_processed,
+        "timestamp": datetime.now().isoformat(),
+        "output_files": {
+            key: {"bin": output_bin_files[key], "idx": output_idx_files[key]}
+            for key in output_bin_files.keys()
+        },
+    }
+
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"\nMetadata saved to: {metadata_path}")
+    print(f"Total tokens: {metadata['total_tokens']:,}")
+    print(f"Total documents: {metadata['total_documents']:,}")
 
 
 if __name__ == "__main__":
