@@ -1,0 +1,292 @@
+#!/bin/bash
+# setup_uv_env.sh - Create uv environment for GPT-NeoX on Isambard ARM HPC
+# Based on original conda setup: agent_documentation/old_env_setup.sh
+#
+# Usage:
+#   bash setup_uv_env.sh
+#
+# Prerequisites:
+#   - uv installed (curl -LsSf https://astral.sh/uv/install.sh | sh)
+#   - Run on a node with GPU access for best results
+#
+# This script will:
+#   1. Load required modules (CUDA, NCCL)
+#   2. Create a Python 3.12 virtual environment with uv
+#   3. Install all GPT-NeoX dependencies (including PyTorch with CUDA)
+#   4. Install flash-attn and transformer-engine
+#   5. Build fused kernels
+#   6. Run verification tests
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "=============================================="
+echo "  GPT-NeoX UV Environment Setup for Isambard"
+echo "=============================================="
+echo "Architecture: $(uname -m)"
+echo "Working directory: $SCRIPT_DIR"
+echo ""
+
+# ============================================
+# Step 1: Load required modules
+# ============================================
+echo "=== Step 1: Loading modules ==="
+# Note: Do NOT load brics/nccl - torch comes with its own NCCL (nvidia-nccl-cu12)
+# and loading the system NCCL causes symbol conflicts
+module load cuda/12.6 || echo "Warning: cuda/12.6 module not found"
+module load cudatoolkit || echo "Warning: cudatoolkit module not found"
+
+# ============================================
+# Step 2: Set compiler and environment
+# ============================================
+echo ""
+echo "=== Step 2: Setting compiler and environment ==="
+export CC=/usr/bin/gcc-12
+export CXX=/usr/bin/g++-12
+export MAX_JOBS=4
+export TORCH_CUDA_ARCH_LIST="9.0"
+export TMPDIR=/projects/a5k/public/tmp
+export CUDA_HOME=/opt/nvidia/hpc_sdk/Linux_aarch64/24.11/cuda/12.6
+
+echo "CC=$CC"
+echo "CXX=$CXX"
+echo "MAX_JOBS=$MAX_JOBS"
+echo "TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST"
+echo "TMPDIR=$TMPDIR"
+echo "CUDA_HOME=$CUDA_HOME"
+
+# ============================================
+# Step 3: Check uv is available
+# ============================================
+echo ""
+echo "=== Step 3: Checking uv ==="
+if ! command -v uv &> /dev/null; then
+    echo "ERROR: uv not found. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+echo "uv version: $(uv --version)"
+
+# ============================================
+# Step 4: Create virtual environment
+# ============================================
+echo ""
+echo "=== Step 4: Creating virtual environment ==="
+if [ -d ".venv" ]; then
+    echo "Removing existing .venv directory..."
+    rm -rf .venv
+fi
+uv venv --python 3.12 .venv
+echo "Virtual environment created at: $SCRIPT_DIR/.venv"
+
+# Get the venv site-packages path for setting library paths later
+VENV_SITE_PACKAGES="$SCRIPT_DIR/.venv/lib/python3.12/site-packages"
+
+# ============================================
+# Step 5: Install all dependencies
+# ============================================
+echo ""
+echo "=== Step 5: Installing all dependencies (including PyTorch with CUDA) ==="
+echo "This may take a while for packages that need compilation..."
+CC=/usr/bin/gcc-12 CXX=/usr/bin/g++-12 MAX_JOBS=4 \
+    uv sync --extra dev
+
+# ============================================
+# Step 6: Set NVIDIA library paths (NCCL, cuDNN, cuBLAS)
+# ============================================
+echo ""
+echo "=== Step 6: Setting NVIDIA library paths ==="
+
+# CRITICAL: Use LD_PRELOAD to force loading venv's NCCL instead of system NCCL
+# This fixes NCCL version mismatch (system has 2.21.5, torch needs 2.27.5)
+# The system NCCL is hardcoded via rpath in torch, so LD_LIBRARY_PATH alone won't work
+export NCCL_LIBRARY="$VENV_SITE_PACKAGES/nvidia/nccl/lib/libnccl.so.2"
+export LD_PRELOAD="$NCCL_LIBRARY"
+
+# Also set LD_LIBRARY_PATH for other NVIDIA libraries
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/nccl/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cublas/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cuda_runtime/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cusparse/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cufft/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/curand/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cusolver/lib:$LD_LIBRARY_PATH"
+
+# Include paths for compilation
+export CPLUS_INCLUDE_PATH="$VENV_SITE_PACKAGES/nvidia/cudnn/include:$CPLUS_INCLUDE_PATH"
+export C_INCLUDE_PATH="$VENV_SITE_PACKAGES/nvidia/cudnn/include:$C_INCLUDE_PATH"
+export LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cudnn/lib:$LIBRARY_PATH"
+export CUDNN_PATH="$VENV_SITE_PACKAGES/nvidia/cudnn"
+
+export CPLUS_INCLUDE_PATH="$VENV_SITE_PACKAGES/nvidia/cublas/include:$CPLUS_INCLUDE_PATH"
+export C_INCLUDE_PATH="$VENV_SITE_PACKAGES/nvidia/cublas/include:$C_INCLUDE_PATH"
+export LIBRARY_PATH="$VENV_SITE_PACKAGES/nvidia/cublas/lib:$LIBRARY_PATH"
+
+echo "NCCL library (LD_PRELOAD): $NCCL_LIBRARY"
+echo "cuDNN path: $CUDNN_PATH"
+
+# Verify PyTorch CUDA (with correct library paths)
+echo ""
+echo "Verifying PyTorch installation..."
+LD_PRELOAD="$NCCL_LIBRARY" uv run python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+
+# ============================================
+# Step 7: Install transformer-engine
+# ============================================
+echo ""
+echo "=== Step 7: Installing transformer-engine ==="
+# Use --no-build-isolation because transformer-engine needs torch at build time
+# but doesn't declare it as a build dependency
+# Use --python with absolute path to prevent uv from picking up system Python
+VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python"
+CC=/usr/bin/gcc-12 CXX=/usr/bin/g++-12 MAX_JOBS=4 \
+    CPLUS_INCLUDE_PATH="$CPLUS_INCLUDE_PATH" \
+    C_INCLUDE_PATH="$C_INCLUDE_PATH" \
+    LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+    LIBRARY_PATH="$LIBRARY_PATH" \
+    CUDNN_PATH="$CUDNN_PATH" \
+    CUDA_HOME="$CUDA_HOME" \
+    LD_PRELOAD="$NCCL_LIBRARY" \
+    uv pip install --python "$VENV_PYTHON" --no-build-isolation "transformer-engine[pytorch]==1.12" || {
+        echo "Warning: transformer-engine installation failed"
+        echo "You may need to install it manually on a compute node with GPU access"
+    }
+
+# ============================================
+# Step 8: Install flash-attn
+# ============================================
+echo ""
+echo "=== Step 8: Installing flash-attn ==="
+# Use --no-build-isolation because flash-attn needs torch at build time
+# but doesn't declare it as a build dependency
+# Use --python with absolute path to prevent uv from picking up system Python
+CC=/usr/bin/gcc-12 CXX=/usr/bin/g++-12 MAX_JOBS=4 \
+    CUDA_HOME="$CUDA_HOME" \
+    LD_PRELOAD="$NCCL_LIBRARY" \
+    uv pip install --python "$VENV_PYTHON" --no-build-isolation flash-attn==2.6.3 || {
+        echo "Warning: flash-attn installation failed"
+        echo "You may need to install it manually on a compute node with GPU access"
+    }
+
+# ============================================
+# Step 9: Apply wandb patch (fix isatty issue)
+# ============================================
+echo ""
+echo "=== Step 9: Applying wandb patch ==="
+WANDB_TERM_FILE="$VENV_SITE_PACKAGES/wandb/errors/term.py"
+if [ -f "$WANDB_TERM_FILE" ]; then
+    sed -i 's/    return sys\.stderr\.isatty()/    return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()/' "$WANDB_TERM_FILE" || true
+    echo "wandb patch applied"
+else
+    echo "Warning: wandb term.py not found, skipping patch"
+fi
+
+# ============================================
+# Step 10: Build fused kernels
+# ============================================
+echo ""
+echo "=== Step 10: Building fused kernels ==="
+LD_PRELOAD="$NCCL_LIBRARY" uv run python -c "from megatron.fused_kernels import load; load()" || {
+    echo "Warning: fused kernels build failed"
+    echo "This may work later when running on a node with GPU access"
+}
+
+# ============================================
+# Step 11: Verify installation
+# ============================================
+echo ""
+echo "=== Step 11: Verifying installation ==="
+LD_PRELOAD="$NCCL_LIBRARY" uv run python -c "
+import sys
+print(f'Python: {sys.version}')
+
+import torch
+print(f'PyTorch: {torch.__version__}')
+print(f'CUDA available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'CUDA version: {torch.version.cuda}')
+    print(f'cuDNN version: {torch.backends.cudnn.version()}')
+
+try:
+    import wandb
+    print(f'wandb: {wandb.__version__}')
+except ImportError:
+    print('wandb: NOT INSTALLED')
+
+try:
+    import flash_attn
+    print(f'flash_attn: {flash_attn.__version__}')
+except ImportError:
+    print('flash_attn: NOT INSTALLED')
+
+try:
+    import transformer_engine
+    print(f'transformer_engine: {transformer_engine.__version__}')
+except ImportError:
+    print('transformer_engine: NOT INSTALLED')
+
+try:
+    import datasets
+    print(f'datasets: {datasets.__version__}')
+except ImportError:
+    print('datasets: NOT INSTALLED')
+
+try:
+    import transformers
+    print(f'transformers: {transformers.__version__}')
+except ImportError:
+    print('transformers: NOT INSTALLED')
+
+try:
+    import deepspeed
+    print(f'deepspeed: {deepspeed.__version__}')
+except ImportError:
+    print('deepspeed: NOT INSTALLED')
+
+try:
+    import lm_dataformat
+    print(f'lm_dataformat: installed')
+except ImportError:
+    print('lm_dataformat: NOT INSTALLED')
+"
+
+# ============================================
+# Step 12: Run tests
+# ============================================
+echo ""
+echo "=== Step 12: Running tests ==="
+echo "Running UV install verification tests..."
+LD_PRELOAD="$NCCL_LIBRARY" uv run pytest tests/test_uv_install.py -v || {
+    echo "Warning: Some UV install tests failed"
+    echo "This may be expected if running without GPU access"
+}
+
+echo ""
+echo "Running HuggingFace dataset preparation tests..."
+LD_PRELOAD="$NCCL_LIBRARY" uv run pytest tests/test_prepare_hf_dataset.py -v || {
+    echo "Warning: Some tests failed"
+    echo "This may be expected if running without GPU access"
+}
+
+echo ""
+echo "=============================================="
+echo "  Setup complete!"
+echo "=============================================="
+echo ""
+echo "To activate the environment:"
+echo "  source .venv/bin/activate"
+echo ""
+echo "Or run commands with:"
+echo "  LD_PRELOAD=\$NCCL_LIBRARY uv run <command>"
+echo ""
+echo "IMPORTANT: You must set LD_PRELOAD to use the correct NCCL library:"
+echo "  export NCCL_LIBRARY=$VENV_SITE_PACKAGES/nvidia/nccl/lib/libnccl.so.2"
+echo "  export LD_PRELOAD=\$NCCL_LIBRARY"
+echo ""
+echo "Before running training, ensure these environment variables are set."
+echo ""
+echo "Example training command:"
+echo "  sbatch pretrain_neox.sbatch /path/to/config.yml"

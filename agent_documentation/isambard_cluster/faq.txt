@@ -1,0 +1,239 @@
+Skip to content
+logo
+Bristol Centre for Supercomputing Documentation
+Frequently Asked Questions
+Search
+
+Bristol Centre for Supercomputing Documentation
+Welcome
+User Documentation
+System Specifications
+Service Status
+Training
+Frequently Asked Questions
+Getting Support
+Applying for Access
+Acknowledgements
+Terms and Policies
+Table of contents
+Systems and access
+How do I access Isambard?
+What is Isambard 3 MACS?
+What is a NHR?
+How do I estimate my node hour (NHR) requirements for my project?
+How can I invite someone to my project?
+Getting started
+My invitation doesn't work?
+How do I log in via SSH?
+Where do I find clifton?
+How do I get SSH access to my new project?
+How do I set my short name?
+How do I submit a helpdesk ticket?
+General use and software
+Can you install my application for me?
+How can I use a different version of Cuda?
+How can I use a package that is not built for Arm architecture (aarch64)?
+How do I set the timezone?
+Running jobs and limits
+How does node hour (NDR) accounting work on Isambard-AI or Isambard3?
+Can I get more node hours (NHRs) added to my project?
+What happens when my project runs out of node hours NHRs?
+How long is the maximum job run time?
+Can you relax resource limits so I team can run more and/or larger jobs?
+Data and Storage
+How do I copy files to and from the Isambard supercomputers?
+How can I transfer data between projects?
+How can I share data between projects?
+Is my data on Isambard backed up?
+Frequently Asked Questions¶
+This page contains a series of brief of how-to style questions. User are directed to also consult the main documentation before raising a support request.
+
+Frequently Asked Questions
+Systems and access
+How do I access Isambard?
+What is Isambard 3 MACS?
+What is a NHR?
+How do I estimate my node hour (NHR) requirements for my project?
+How can I invite someone to my project?
+Getting started
+My invitation doesn't work?
+How do I log in via SSH?
+Where do I find clifton?
+How do I get SSH access to my new project?
+How do I set my short name?
+How do I submit a helpdesk ticket?
+General use and software
+Can you install my application for me?
+How can I use a different version of Cuda?
+How can I use a package that is not built for Arm architecture (aarch64)?
+How do I set the timezone?
+Running jobs and limits
+How does node hour (NDR) accounting work on Isambard-AI or Isambard3?
+Can I get more node hours (NHRs) added to my project?
+What happens when my project runs out of node hours NHRs?
+How long is the maximum job run time?
+Can you relax resource limits so I team can run more and/or larger jobs?
+Data and Storage
+How do I copy files to and from the Isambard supercomputers?
+How can I transfer data between projects?
+How can I share data between projects?
+Is my data on Isambard backed up?
+Systems and access¶
+How do I access Isambard?¶
+Isambard-AI and Isambard 3 are two different supercomputers. These are separate machines, with different funding sources, access routes and associated eligibility criteria.
+
+Isambard 3 is a CPU-based supercomputer optimised for traditional numerical simulation workloads. It is funded via UKRI and access calls are open to users eligible via UKRI tier 2 calls, or calls run internally to the GW4 alliance.
+Isambard-AI is a very large GPU-based supercomputer optimised for Artificial Intelligence and Machine Learning workloads. It is funded by DSIT and access calls are open to users from non-traditional sectors.
+Further details can be found on the access page, and further funding information on the acknowledgements page.
+
+What is Isambard 3 MACS?¶
+The Multi-Architecture Comparison System (MACS) nodes is a collection of different types of hardware available on Isambard 3. Further information can be found on the system specifications page.
+
+What is a NHR?¶
+NHR stands for 'node hour' and is the unit of measurement for using Isambard supercomputer compute nodes. The calculation of node hours is described in the accounting guide.
+
+How do I estimate my node hour (NHR) requirements for my project?¶
+It is very difficult to accurately estimate the run time of an application on a new experience. The observed performance depends on factors that vary from platform to platform including compute performance, total memory, memory latency/bandwidth, interconnect performance and storage performance. Generally, estimates are made on the basis of comparison to measured performance on other systems.
+
+In general we recommend making a higher estimate for the required node hours because allocations cannot be extended once exhausted, as described in the project management guide.
+
+How can I invite someone to my project?¶
+Only those with the Principle Investigator (PI) role may invite users to a project. Within the parameters of their responsibilities they may invite anyone to join, including collaborators and members of local RSE or technical teams.
+
+Getting started¶
+My invitation doesn't work?¶
+The Isambard supercomputers are high-value national assets, and we need to have robust processes for cyber- and data- security purposes. There are a few reasons why your invitation may not work. These include:
+
+The invitation has expired
+
+PIs: contact the support email address provided in the invitation
+Non-PIs: ask your PI to resend the invitation via the portal
+The invitation is for a different email address
+
+You cannot forward an invitation to someone else.
+The email address does not match that used by the identity provider. For example some universities may register a standardised address format with MyAccessID, eg ab12345@university.ac.uk rather than a human-readable version, eg first.last@university.ac.uk. When encountering this, a message will be printed containing the email address that was used.
+In both cases, please contact your PI so they can invite you directly via the portal.
+
+There is an outage
+
+Please consult the status page
+
+(Academic users) Your institution doesn't support MyAccessID
+
+A small number of UK academic institutions have limited or no support for MyAccessID. In the first instance, please contact you institution's IT team. If this is not successful, please contact your PI and ask them to raise a helpdesk ticket to request as 'IDP of last resort' account.
+
+How do I log in via SSH?¶
+You need to be a member of a project with access to Isambard-AI or Isambard3 to be able to log in. If you are a member of a project, then you can connect via SSH using the "clifton" tool that we provide. This is used to obtain a signed SSH certificate that will grant you access.
+
+Full details are provided on the getting started page.
+
+Where do I find clifton?¶
+-bash: clifton: command not found
+
+If you obtain an error like the above, then ensure you have followed the instructions to download and install clifton.
+
+Note that a minority of Linux systems do not have ~/.local/bin/ in the $PATH. Several workarounds may be appropriate, depending on the restrictions on your machine:
+
+Add ~/.local/bin/ to your $PATH
+Move clifton to a different location that is in your $PATH
+Keep clifton in your $HOME directory and launch e.g. using $HOME/clifton
+How do I get SSH access to my new project?¶
+All new projects are initiated with an invitation email to the PI, which must be accepted before expiry. The PI must then invite users to this project, who must also accept their invitations. After this, new users should follow the getting started guide. Users working via SSH that already have an existing project should rerun clifton auth and then clifton ssh-config write.
+
+Please also see the follow-on projects guide.
+
+How do I set my short name?¶
+"Something went wrong: User short name is empty."
+
+You will see this error if you have not set your UNIX username in the portal. To set your UNIX username, please follow these instructions.
+
+How do I submit a helpdesk ticket?¶
+To submit a helpdesk ticket, you will need to be a member of an active project. Log in to the helpdesk and click the plus icon at the bottom left of the screen. This will open up a window where you can type in the title and detail of your ticket. Also see the helpdesk guide.
+
+General use and software¶
+Can you install my application for me?¶
+The Isambard supercomputers use a self-service model for applications. The range of applications, versions and other variants required by our diverse user base is too large for this approach to work. Moreover, a self-service approach encourages best practice with regards to traceability and reproducibility. In some cases, licencing conditions preclude central installation although individual projects may be able to share executables using the /projects/[PROOJECT] directory.
+
+To support users, we have provided a range of guides that allow easy installation of many widely used applications:
+
+Conda and Python
+Spack
+Containers
+Where possible we will provide information for specific applications. PIs may also invite additional users to provide support, such as local RSE teams.
+
+How can I use a different version of Cuda?¶
+We only provide the system bundled Cuda on Isambard-AI:
+
+user@@nid001040> module av cudatoolkit
+
+------------------------- /opt/cray/pe/lmod/modulefiles/core -------------------------
+   cudatoolkit/23.9_11.0    cudatoolkit/23.9_11.8    cudatoolkit/23.9_12.2 (D)
+   ...
+There are two options for using a different version of cuda other than building from source:
+
+Conda can be used to install cuda, see anaconda.org for the versions available for aarch64.
+Containers from Nvidia GPU Cloud (NGC) provide every version of Cuda.
+Please follow the following guides for using Conda or containers on BriCS facilities:
+
+Python and Conda
+Containers
+How can I use a package that is not built for Arm architecture (aarch64)?¶
+Support for aarch64 in common package managers is improving significantly and build recipes should be usable with minimal modification. For compiled applications, tools such as Spack can significantly simplify the process. For Python packages, please see the installing Python Packages guide
+
+Note the x86 binaries compiled for eg AMD or Intel processors will not run on Isambard 3 or Isambard-AI compute nodes.
+
+How do I set the timezone?¶
+Internally, the Isambard services use UTC as the system time. You can change the timezone you see by setting the environment variable "TZ". For example, setting TZ to "Europe/London" or "GB" will change this to UK time, ie
+
+export TZ=GB
+
+If you want this more permanently you could add this to your .bashrc file, with a suitable comment.
+
+A full list of timezones can be found at this wikipedia page. Note that BriCS is not responsible for external sources.
+
+Running jobs and limits¶
+How does node hour (NDR) accounting work on Isambard-AI or Isambard3?¶
+Accounting on the Isambard systems is based on measuring consumed "node hours" (NHR) of a job. Each project is allocated a total limit of node hours available for it to use. Jobs will only run if there is enough node hours remaining in your project account.
+
+Projects are responsible for managing node hour consumption. Further information can be found on the accounting guide.
+
+Can I get more node hours (NHRs) added to my project?¶
+BriCS cannot add more NHRs to projects because allocations of compute resources to projects is administered by the allocating organisation, and any such queries should be directed to them. Please see the relevant section of the project management guide.
+
+What happens when my project runs out of node hours NHRs?¶
+Users will only be able to run jobs that are within the remaining budget of node hours. Any jobs submitted that goes over this limit will be queues but not run. Such jobs will be displayed in squeue with status PD and a reason such as AssocGrpCPUMinutesLimit.
+
+Note that users can still access the login nodes, for example to allow data transfer, once node hour credits are exhausted.
+
+How long is the maximum job run time?¶
+The maximum runtime of a job submitted to Slurm is 24 hours. Thus has been chosen to balance the needs of users and requirements for system maintenance and patching. More details about how Slurm works on BriCS systems and how to use job dependencies can be found in the Slurm guide.
+
+Can you relax resource limits so I team can run more and/or larger jobs?¶
+The queue limits have been set to provide a good experience for all users and in general will not be altered. If your project has a strong use case, please raise a helpdesk ticket.
+
+Also, please see the Slurm guide.
+
+Data and Storage¶
+How do I copy files to and from the Isambard supercomputers?¶
+The easiest way to copy files to Isambard-AI or Isambard 3 is to use scp or rsync. Full instructions can be found in the file transfer guide.
+
+How can I transfer data between projects?¶
+There are various circumstances when a user may wish to transfer data between projects. However, this must be done with care not to breach privacy or licencing, noting that the PI is legally responsible for any breach.
+
+Upload to an external location and download. This option may be excessively time consuming and disruptive to others using the finite network bandwidth.
+Transfer via public directories. Every project has such a directory located in /projects/[PROJECT]/public. This can be very quick and convenient, but any data stored there even for a moment is visible to ALL users of the platform.
+Inter-project copy. It is possible to use scp or rsync to copy from one project to another on the same platform. To do this, the user will need to install and run clifton in their source project account. Note that Isambard-AI phases 1 and 2 are different platforms in this context.
+PI raises a helpdesk ticket. By exception, bespoke transfers can be arranged. However, this will require the PI(s) for both the source and destination projects to give written approval.
+See the file transfer guide for more information.
+
+How can I share data between projects?¶
+There are various circumstances when a user may wish to share data between projects. However, this must be done with care not to breach privacy or licencing, noting that the PI is legally responsible for any breach.
+
+Every project has such a directory located in /projects/[PROJECT]/public. This can be very convenient, but any data stored there even for a moment is visible to ALL users of the platform.
+
+See the storage information page for more information.
+
+Is my data on Isambard backed up?¶
+No. PIs are responsible for ensuring adequate backups are arranged for your project data. See the storage information page for details.
+
+Made with Material for MkDocs

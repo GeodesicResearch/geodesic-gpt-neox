@@ -1,0 +1,171 @@
+Skip to content
+Bristol Centre for Supercomputing Documentation
+Storage spaces
+
+logoBristol Centre for Supercomputing Documentation
+Welcome
+User Documentation
+User Documentation
+Getting Started
+Tutorials
+Tutorials
+Setup
+Distributed PyTorch Training
+Introducing Isambard-AI: Interactive Chatbot tutorial
+Guides
+Guides
+Setting your UNIX username
+Login (SSH and Clifton)
+File Transfer
+Connect using MobaXterm
+Managing projects
+Accounting
+Follow-on projects
+Python
+Slurm Job Management
+Modules and Compilers
+Spack
+Spack
+Setting up Spack
+Containers
+Containers
+Podman-HPC
+Singularity
+Podman-HPC Multi-node
+Singularity Multi-node
+Jupyter Notebooks
+Visual Studio Code (VS Code)
+MPI
+Information
+Information
+Project Policies
+Storage spaces
+Table of contents
+Isambard-AI and Isambard 3
+Overview
+Key details
+Checking usage and quotas
+Job scheduling
+Applications
+Applications
+ML Packages
+ML Packages
+AlphaFold
+AlphaFold
+System Specifications
+Service Status
+Service Status
+Known Issues
+Planned Maintenance
+Training
+Training
+Isambard-AI workshop at Bristol Data Week 2025
+Frequently Asked Questions
+Getting Support
+Applying for Access
+Acknowledgements
+Terms and Policies
+Terms and Policies
+Access Terms
+Acceptable Use Policy
+Data Privacy Policy
+Schedules
+Schedules
+Schedule 1 – Grant Terms
+Schedule 2 – Data Processing Terms
+Schedule 3 – End User License Terms
+Schedule 4 – Isambard AI Project Description
+Operational Models
+Operational Models
+Shared Responsibility Model
+Resource Management Model
+Storage spaces¶
+Isambard-AI and Isambard 3¶
+Overview¶
+Storage is allocated to projects. When a project is created on the BriCS portal, it is granted a project-specific shared storage space on the shared filesystem under /projects/. Members of the project are also granted user storage space associated with their project-specific UNIX account under /home/<PROJECT>/ and /scratch/<PROJECT> (where <PROJECT> is a project-specific short name). The project-specific shared and user storage is on the shared Lustre filesystem, which is accessible from login and compute nodes.
+
+Project storage expires at the project end date
+
+The storage allocated to each project is accessible to members of the project for the duration of the project.
+
+After a project's end date project members will no longer able to access or use any storage previously allocated to the project and any data remaining in the project storage area will be deleted. This applies to project-specific shared storage under /projects as well as user storage under /home/<PROJECT> and /scratch/<PROJECT>.
+
+Project storage is working storage
+
+Project storage on BriCS facilities is working storage. It is not backed up and is not intended for long term or archival storage of data.
+
+Please ensure that important data is regularly backed up in another location during the project and that any data that should remain accessible to project members after the end of the project is copied off the system before the project end date.
+
+Users are also granted access to fast local scratch storage on nodes under /local/user/. This is a temporary storage space intended for use in situations where the shared filesystem is unsuitable (such as building rootless containers) and is regularly wiped.
+
+To facilitate sharing of data between users on different projects, each project is provided with an additional per-project "public shared" storage space on the Lustre filesystem at /projects/public/ (also linked from /projects/<PROJECT>/public). The permissions of per-project directories /projects/public/<PROJECT> are configured such that the directories are writeable only by members of <PROJECT>, but are readable by all users.
+
+Key details¶
+The following tables summarize the characteristics of each user-accessible storage space. In the table, <PROJECT> refers to the short name of your project and <USER> refers to the UNIX username associated with your account in the BriCS portal. Your project-specific username is <USER>.<PROJECT> (e.g. for UNIX user grace in project cobol, the project-specific username is grace.cobol). Additionally <UID> refers to the numeric user ID associated with your project-specific user account, <USER>.<PROJECT>.
+
+
+Project user storage
+Project user scratch storage
+Project shared storage
+Project public shared storage
+Node-local scratch storage
+Property	Common Value
+Use cases	Storage of user-specific data for the duration of the project (e.g. configuration files, submission scripts, job output files)
+Path	/home/<PROJECT>/<USER>.<PROJECT>
+Environment variables	HOME
+Filesystem type	Shared parallel (Lustre)
+On compute node
+On login node
+Accessible to	User <USER>.<PROJECT>
+Expires	End date of project
+Property	Isambard-AI	Isambard 3
+Storage quota	50 TB soft / 55 TB hard	10 TB soft / 11 TB hard
+File quota	100M soft / 105M hard	10M soft / 10.5M hard
+
+User quotas for shared filesystem apply across the whole shared filesystem
+
+The storage and file quotas for each project-specific user account <USER>.<PROJECT> apply across the entire shared filesystem, i.e. storage and files in any path on the shared filesystem count against this quota.
+
+Finding your numeric user ID (UID)
+
+To find the numeric user ID of the logged in account, inspect the UID environment variable,
+
+echo $UID
+or use the id command
+
+id -ur
+Checking usage and quotas¶
+
+Project user storage
+Project user scratch storage
+Project shared storage
+Project public shared storage
+Node-local scratch storage
+The storage and file number quota on the shared parallel filesystem for each project-specific user account <USER>.<PROJECT> applies across all storage spaces on the shared filesystem, including /home/<PROJECT>/<USER>.<PROJECT>, /scratch/<PROJECT>/<USER>.<PROJECT>, /projects/<PROJECT>, and /projects/public/<PROJECT>.
+
+Check current per-user usage and limits on the shared parallel filesystem (Lustre) using the lfs quota command.
+
+e.g. on Isambard-AI
+
+lfs quota -h -u $USER /lus/lfs1aip1
+$ lfs quota -h -u $USER /lus/lfs1aip1
+Disk quotas for usr username.project (uid 1483800121):
+     Filesystem    used   quota   limit   grace   files   quota   limit   grace
+  /lus/lfs1aip1  1.047M     50T     55T       -      14  104857600 110100480       -
+uid 1483800121 is using default block quota setting
+uid 1483800121 is using default file quota setting
+e.g. on Isambard 3
+
+lfs quota -h -u $USER /lfs1i3
+$ lfs quota -h -u $USER /lfs1i3
+Disk quotas for usr username.project (uid 1483800121):
+     Filesystem    used   quota   limit   grace   files   quota   limit   grace
+  /lus/lfs1i3    1.047M     10T     11T       -      14  10485760 11010048       -
+uid 1483800121 is using default block quota setting
+uid 1483800121 is using default file quota setting
+
+Data in the login node local scratch space /local/user/<UID> will automatically be deleted after a short time period. Persistence after the end of a logged in session may occur, but should not be relied upon. ↩
+
+On Isambard-AI - the compute node local scratch space /local/user/<UID> is linked to /run/user/<UID>. This persists only for the lifetime of a running job. On job start a tmpfs filesystem is created in this location. At the end of the job the mounted tmpfs filesystem is destroyed. On Isambard 3 /local/user/<UID> is mounted to local storage and is cleaned at the end of the job. ↩
+
+Made with Material for MkDocs

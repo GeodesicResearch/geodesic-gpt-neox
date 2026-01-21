@@ -1,0 +1,111 @@
+Skip to content
+Bristol Centre for Supercomputing Documentation
+Job scheduling
+
+logoBristol Centre for Supercomputing Documentation
+Welcome
+User Documentation
+User Documentation
+Getting Started
+Tutorials
+Tutorials
+Setup
+Distributed PyTorch Training
+Introducing Isambard-AI: Interactive Chatbot tutorial
+Guides
+Guides
+Setting your UNIX username
+Login (SSH and Clifton)
+File Transfer
+Connect using MobaXterm
+Managing projects
+Accounting
+Follow-on projects
+Python
+Slurm Job Management
+Modules and Compilers
+Spack
+Spack
+Setting up Spack
+Containers
+Containers
+Podman-HPC
+Singularity
+Podman-HPC Multi-node
+Singularity Multi-node
+Jupyter Notebooks
+Visual Studio Code (VS Code)
+MPI
+Information
+Information
+Project Policies
+Storage spaces
+Job scheduling
+Table of contents
+Overview
+User and project limits
+Partition configuration
+Applications
+Applications
+ML Packages
+ML Packages
+AlphaFold
+AlphaFold
+System Specifications
+Service Status
+Service Status
+Known Issues
+Planned Maintenance
+Training
+Training
+Isambard-AI workshop at Bristol Data Week 2025
+Frequently Asked Questions
+Getting Support
+Applying for Access
+Acknowledgements
+Terms and Policies
+Terms and Policies
+Access Terms
+Acceptable Use Policy
+Data Privacy Policy
+Schedules
+Schedules
+Schedule 1 – Grant Terms
+Schedule 2 – Data Processing Terms
+Schedule 3 – End User License Terms
+Schedule 4 – Isambard AI Project Description
+Operational Models
+Operational Models
+Shared Responsibility Model
+Resource Management Model
+Job scheduling
+Overview¶
+The scheduling and allocation of resources to compute jobs on BriCS compute services (Isambard-AI Phase 1, Isambard 3, etc.) are managed by the Slurm workload manager.
+
+The configuration of the workload manager controls how jobs are scheduled, how resources are shared, and how resource limits are imposed. This configuration is tailored to each BriCS compute service based on the compute resources offered, the expected usage profile of the service, and the principles described in the Resource Management Model.
+
+Key information about the configuration of the workload manager for each compute service is summarized below. For information on how to submit and manage jobs, see the Slurm Job Management guide.
+
+User and project limits¶
+The following resource limits are effective at the user and project level.
+
+
+Isambard-AI Phase 1
+Isambard 3 Grace
+Isambard 3 MACS
+Resource Limit	Value	Applies to	QoS name	Notes
+Max GPUs allocated	32	Project	32gpu_qos	Maximum gres/gpu resource allocated to all jobs associated with a project
+
+Partition configuration¶
+
+Isambard-AI Phase 1
+Isambard 3 Grace
+Isambard 3 MACS
+Partition name	User accessible	QoS name	Nodes	Maximum walltime	Notes
+workq (*)		workq_qos	38 × 4 GH200 node	24h	For general purpose AI/ML workloads
+bricsonly		N/A	1 × 4 GH200 node	N/A	Test partition for BriCS administrators
+interactive		N/A	1 × 4 GH200 node	N/A	Test partition for BriCS administrators
+
+(*) Denotes the default partition that jobs are submitted to if no partition is specified.
+
+Made with Material for MkDocs

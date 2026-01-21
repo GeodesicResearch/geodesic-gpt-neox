@@ -1,0 +1,462 @@
+Skip to content
+Bristol Centre for Supercomputing Documentation
+Slurm Job Management
+
+logoBristol Centre for Supercomputing Documentation
+Welcome
+User Documentation
+User Documentation
+Getting Started
+Tutorials
+Tutorials
+Setup
+Distributed PyTorch Training
+Introducing Isambard-AI: Interactive Chatbot tutorial
+Guides
+Guides
+Setting your UNIX username
+Login (SSH and Clifton)
+File Transfer
+Connect using MobaXterm
+Managing projects
+Accounting
+Follow-on projects
+Python
+Slurm Job Management
+Table of contents
+SBATCH: Writing job submission scripts
+Introduction
+Running a single job
+Running a Python script on multiple CPUs simultaneously
+SRUN & SALLOC: Submitting interactive jobs
+Running a single command
+Running an interactive session
+Running an interactive shell in an existing job
+Allocating a compute node as a job
+SQUEUE, SACCT, SCANCEL: Managing jobs
+Advanced job management
+Job dependencies
+Resource limits
+Modules and Compilers
+Spack
+Spack
+Setting up Spack
+Containers
+Containers
+Podman-HPC
+Singularity
+Podman-HPC Multi-node
+Singularity Multi-node
+Jupyter Notebooks
+Visual Studio Code (VS Code)
+MPI
+Information
+Information
+Project Policies
+Storage spaces
+Job scheduling
+Applications
+Applications
+ML Packages
+ML Packages
+AlphaFold
+AlphaFold
+System Specifications
+Service Status
+Service Status
+Known Issues
+Planned Maintenance
+Training
+Training
+Isambard-AI workshop at Bristol Data Week 2025
+Frequently Asked Questions
+Getting Support
+Applying for Access
+Acknowledgements
+Terms and Policies
+Terms and Policies
+Access Terms
+Acceptable Use Policy
+Data Privacy Policy
+Schedules
+Schedules
+Schedule 1 – Grant Terms
+Schedule 2 – Data Processing Terms
+Schedule 3 – End User License Terms
+Schedule 4 – Isambard AI Project Description
+Operational Models
+Operational Models
+Shared Responsibility Model
+Resource Management Model
+Slurm Job Management¶
+Isambard-AI and Isambard 3 use the Slurm Workload Manager to run jobs on the compute nodes. Isambard-AI is a Grace Hopper (CPU+GPU) Superchip cluster. Isambard 3 consists of 2 clusters: Grace CPU Superchip and the Multi-Architecture Comparison System (MACS).
+
+SBATCH: Writing job submission scripts¶
+Introduction¶
+You can run a job by submitting a batch script with the sbatch command. E.g. assume your batch script is called myscript.sh, you can then submit the batch script as follows:
+
+
+Isambard-AI
+Isambard 3
+Specify GPU Resource
+
+You must specify GPU resource in your batch script using either --gpus or one of the --gpus-per-* options. Each GPU requested will also allocate 72 CPU cores and 115 GB of Grace RAM, i.e. one Grace Hopper Superchip.
+
+user.project@nid001040:~> sbatch myscript.sh
+Submitted batch job 19159
+
+This will add your job to the queue for the compute nodes, and your job will run when the requested resource (as defined in the batch script) is available.
+
+When composing your batch script, please consider the resources available, e.g. you may wish to use srun to run multiple jobs simultaneously across a Superchip or a node. You should also use the --time directive to set a time limit for your job.
+
+See the examples below for guidance on how to write your batch script.
+
+Job time limit
+
+The maximum running times for jobs on Isambard-AI and Isambard 3 are detailed on the Job scheduling page. If your workload needs to run for more than 24 hours, see Job dependencies for advice on how to submit sequences of jobs to run workloads that exceed the maximum partition time limit.
+
+Please note that the partition time limits shown by sinfo on Isambard-AI do not reflect the actual time limits applied to jobs. The partition time limits are associated with Slurm Quality of Service configuration and do not display in the output of sinfo.
+
+Running a single job¶
+
+Isambard-AI
+Isambard 3
+The following example batch script shows the commands hostname and nvidia-smi running sequentially, requesting one GPU. For a single GPU, 72 CPU cores and 115 GB of Grace RAM will be allocated (one Grace Hopper Superchip)
+
+#!/bin/bash
+
+#SBATCH --job-name=docs_ex1
+#SBATCH --output=docs_ex1.out
+#SBATCH --gpus=1
+#SBATCH --time=00:5:00         # Hours:Mins:Secs
+
+hostname
+nvidia-smi --list-gpus
+If this file is named docs1.batch, you can submit the job as follows
+
+user.project@nid001040:~> sbatch docs1.batch
+Submitted batch job 19159
+Checking the output of the job:
+
+user.project@nid001040:~> cat docs_ex1.out
+nid001038
+GPU 0: GH200 120GB (UUID: GPU-f9fc6950-574a-5310-dc7c-b8d02cc529db)
+The output shows the hostname and the GPU information for the compute node on which the job ran.
+
+Using srun you can also run a single GPU job multiple times in parallel, e.g.
+
+#!/bin/bash
+
+#SBATCH --job-name=docs_ex2
+#SBATCH --output=docs_ex2.out
+#SBATCH --gpus=2
+#SBATCH --ntasks-per-gpu=1
+#SBATCH --time=00:5:00
+
+srun nvidia-smi --list-gpus
+If we run this batch script and check the output:
+
+user.project@nid001040:~> sbatch docs2.batch
+Submitted batch job 19161
+user.project@nid001040:~> cat docs_ex2.out
+GPU 0: GH200 120GB (UUID: GPU-f9fc6950-574a-5310-dc7c-b8d02cc529db)
+GPU 0: GH200 120GB (UUID: GPU-4833ca67-f003-3dbd-1d44-a5c7645a5ae3)
+Checking the UUIDs we can see 2 different GPUs have been allocated.
+
+Specifying different job steps with srun
+
+You can chain together different job steps using &, adding the wait command at the end (to avoid job termination), e.g.
+
+srun --ntasks=1 --gpus=1 --exclusive job_step1 &
+srun --ntasks=1 --gpus=1 --exclusive job_step2 &
+wait
+In a job where 2 or more GPUs have been allocated, this will run the job steps concurrently, allocating 1 GPU to each job step and running 1 task per job step. The srun --exclusive flag here ensures that the job steps are only allocated as much resource as requested in the srun command and that they can run concurrently.
+
+
+Running a Python script on multiple CPUs simultaneously¶
+Consider the following Python script:
+
+#!/usr/bin/env python3
+
+import os
+from time import sleep
+from datetime import datetime
+import socket
+
+sleep(30)
+
+time_now = datetime.now().strftime("%H:%M:%S")
+
+print('Task {}: Hello world from {} at {}.'.format(os.environ["SLURM_PROCID"], socket.gethostname(), time_now))
+This script sleeps for 30 seconds, then prints the hostname and the time. If this script is called pysrun.py, then we can write the following batch script, calling pysrun.py three times with srun:
+
+
+Isambard-AI
+Isambard 3
+#!/bin/bash
+
+#SBATCH --job-name=docs_ex3
+#SBATCH --output=docs_ex3.out
+#SBATCH --gpus=1                # this allocates 72 CPU cores
+#SBATCH --ntasks-per-gpu=3
+#SBATCH --time=00:5:00
+
+module load cray-python
+
+srun python3 pysrun.py
+If we run this batch script and check the output:
+
+user.project@nid001040:~> sbatch docs3.batch
+Submitted batch job 19162
+user.project@nid001040:~> cat docs_ex3.out
+Task 0: Hello world from nid001016 at 17:20:29.
+Task 1: Hello world from nid001016 at 17:20:29.
+Task 2: Hello world from nid001016 at 17:20:29.
+
+We can see from the timestamp that the three srun commands have executed simultaneously.
+
+SRUN & SALLOC: Submitting interactive jobs¶
+Running a single command¶
+As well as its above use in job scripts for parallel job submission, srun can also be used to submit a job interactively on the command line. This can be used to run a specific command using compute node resources, e.g.
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> srun --gpus=1 --time=00:02:00 nvidia-smi --list-gpus
+srun: job 19164 queued and waiting for resources
+srun: job 19164 has been allocated resources
+
+GPU 0: GH200 120GB (UUID: GPU-4833ca67-f003-3dbd-1d44-a5c7645a5ae3)
+
+Running an interactive session¶
+srun can also be used to start a interactive shell session on a compute node using the --pty option, e.g.
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> srun --gpus=1 --time=00:15:00 --pty /bin/bash --login
+srun: job 22874 queued and waiting for resources
+srun: job 22874 has been allocated resources
+user.project@nid001005:~> hostname
+nid001005
+user.project@nid001005:~> nvidia-smi --list-gpus
+GPU 0: GH200 120GB (UUID: GPU-f00d9a03-840c-5ea2-a748-243383b6efbc)
+
+Used in this way, srun creates a resource allocation before running the specified command or shell in the allocation.
+
+Running an interactive shell in an existing job¶
+It is also possible to use srun to start an interactive shell session associated with the resources allocated to an already-running job, which can be useful for monitoring and debugging jobs. This is done by specifying the job ID of a currently running job using the --jobid option.
+
+You are able to interact with an existing batch job using srun. First let us submit a job and check it's running using squeue:
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> sbatch script.batch
+Submitted batch job 22886
+user.project@nid001040:~> squeue --me
+JOBID         USER PARTITION                     NAME ST TIME_LIMIT       TIME  TIME_LEFT NODES NODELIST(REASON)
+22886 user.project     workq                   script  R      10:00       0:03       9:57     1 nid001005
+
+Then start an interactive shell in a job step using the job's allocated resources, we then run some example commands:
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> srun --ntasks=1 --gpus=1 --jobid=22886 --pty /bin/bash -l
+user.project@nid001005:~> hostname
+nid001005
+user.project@nid001005:~> nvidia-smi --list-gpus
+GPU 0: GH200 120GB (UUID: GPU-f00d9a03-840c-5ea2-a748-243383b6efbc)
+user.project@nid001005:~> exit
+logout
+
+After exiting the interactive shell, the original job continues running:
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> squeue --me
+JOBID         USER PARTITION                     NAME ST TIME_LIMIT       TIME  TIME_LEFT NODES NODELIST(REASON)
+22886 user.project     workq                   script  R      10:00       0:39       9:21     1 nid001005
+
+Allocating a compute node as a job¶
+Similarly, salloc can be used to reserve compute node resources, and then srun can be used to run jobs on the requested resource interactively:
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> salloc --gpus=1 --time=00:2:00
+salloc: Granted job allocation 19130
+user.project@nid001040:~> srun hostname
+nid001016
+user.project@nid001040:~> srun nvidia-smi --list-gpus
+GPU 0: GH200 120GB (UUID: GPU-4833ca67-f003-3dbd-1d44-a5c7645a5ae3)
+
+Fair Use of Resources
+
+Always set a time limit when using salloc to run jobs interactively, and cancel the job using scancel <JOB_ID> when you have finished (replace <JOB_ID> with the job ID of the allocation).
+
+SQUEUE, SACCT, SCANCEL: Managing jobs¶
+The squeue command shows the jobs running on the system, combine with --me flag to see just your own jobs that are currently running:
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> squeue --me
+JOBID         USER PARTITION                     NAME ST TIME_LIMIT       TIME  TIME_LEFT NODES NODELIST(REASON)
+19130 user.project     workq              interactive  R       2:00       0:53       1:07     1 nid001038
+
+The sacct command shows your current and previously completed jobs:
+
+
+Isambard-AI
+Isambard 3
+user.project@nid001040:~> sacct
+JobID           JobName  Partition      Account  AllocCPUS        State ExitCode
+------------ ---------- ---------- ------------ ---------- ------------ --------
+19107              test      workq      project        144    COMPLETED      0:0
+19107.batch       batch                 project        144    COMPLETED      0:0
+19107.0      nvidia-smi                 project        144       FAILED      2:0
+19114            pysrun      workq      project         72    COMPLETED      0:0
+19114.batch       batch                 project         72    COMPLETED      0:0
+19114.0         python3                 project          1    COMPLETED      0:0
+19114.1         python3                 project          1    COMPLETED      0:0
+19114.2         python3                 project          1    COMPLETED      0:0
+19130        interacti+      workq      project         72    CANCELLED      0:0
+19132           pysrun2      workq      project         72      RUNNING      0:0
+19132.batch       batch                 project         72      RUNNING      0:0
+19132.0         python3                 project          1      RUNNING      0:0
+
+scancel is used to cancel a job.
+
+
+Isambard-AI
+Isambard 3
+E.g. to cancel a job with the ID 19132:
+
+user.project@nid001040:~> scancel 19132
+
+Advanced job management¶
+Job dependencies¶
+The execution of a Slurm job can be made to depend on the state of other jobs in the queue. Making the start of a job conditional on the outcome of other jobs can be useful in various situations. For example:
+
+A job depends on the result of one of more other jobs, e.g. jobs A and B perform pre-processing operations on data to be used by job C.
+One or more jobs perform operations on same dataset which cannot be done in parallel, e.g. jobs A and B both modify dataset C and if this happens simultaneously there will be a race condition.
+A workload needs to run for a period exceeding the maximum time limit available, but can be broken down into smaller chunks to be executed in sequence, e.g. jobs A, B, C etc. run in sequence, with each saving state before the time limit is exceeded and with subsequent jobs resuming from the saved state.
+Dependencies are specified using the sbatch --dependency flag. Each dependency has a type which determines the conditions where the dependency is satisfied (and the job may start).
+
+Using the following simple job script we can demonstrate the effect of using some different dependency types:
+
+submit_dependency.sh
+#!/bin/bash
+#SBATCH --job-name=dependency_example
+#SBATCH --time=1
+#SBATCH --ntasks=1
+
+echo "${SLURM_JOB_ID} on $(hostname) at $(date --iso-8601=seconds)"
+sleep 30
+Without the --dependency flag, submitted jobs can execute simultaneously
+
+user.project@login02:~> sbatch submit_dependency.sh
+Submitted batch job 52638
+user.project@login02:~> sbatch submit_dependency.sh
+Submitted batch job 52639
+user.project@login02:~> sbatch submit_dependency.sh
+Submitted batch job 52640
+user.project@login02:~> sbatch submit_dependency.sh
+Submitted batch job 52641
+Using squeue with the --Format flag and specifying the Dependency field causes dependency information about each job to be displayed:
+
+user.project@login02:~> squeue --me --Format="JobID,Name,StateCompact:6,TimeUsed,ReasonList,Dependency:32"
+JOBID               NAME                ST    TIME                NODELIST(REASON)    DEPENDENCY
+52638               dependency_example  R     0:08                x3010c0s31b1n0      (null)
+52639               dependency_example  R     0:05                x3010c0s31b1n0      (null)
+52640               dependency_example  R     0:05                x3010c0s31b1n0      (null)
+52641               dependency_example  R     0:05                x3010c0s31b1n0      (null)
+In this case, the jobs ran simultaneously, as shown by their outputs:
+
+user.project@login02:~> cat slurm-*.out
+52638 on x3010c0s31b1n0 at 2025-01-23T16:37:45+00:00
+52639 on x3010c0s31b1n0 at 2025-01-23T16:37:48+00:00
+52640 on x3010c0s31b1n0 at 2025-01-23T16:37:48+00:00
+52641 on x3010c0s31b1n0 at 2025-01-23T16:37:48+00:00
+A singleton type dependency ensures that only one instance of a job with a specific name and user can run at any one time. Each job submitted with this dependency will wait until any previously launched job with the same name and user currently executing (or suspended) has terminated.
+
+If a job is submitted multiple times with --dependency=singleton and the same job name, then the jobs will run one at a time, e.g.
+
+user.project@login02:~> sbatch --dependency=singleton submit_dependency.sh
+Submitted batch job 52642
+user.project@login02:~> sbatch --dependency=singleton submit_dependency.sh
+Submitted batch job 52643
+user.project@login02:~> sbatch --dependency=singleton submit_dependency.sh
+Submitted batch job 52644
+user.project@login02:~> sbatch --dependency=singleton submit_dependency.sh
+Submitted batch job 52645
+The output of squeue shows that 1 job is running and the other 3 jobs have unsatisfied singleton type dependencies (the first submitted job's dependency was automatically satisfied as no other jobs of the same name and user were present):
+
+user.project@login02:~> squeue --me --Format="JobID,Name,StateCompact:6,TimeUsed,ReasonList,Dependency:32"
+JOBID               NAME                ST    TIME                NODELIST(REASON)    DEPENDENCY
+52643               dependency_example  PD    0:00                (Dependency)        singleton(unfulfilled)
+52644               dependency_example  PD    0:00                (Dependency)        singleton(unfulfilled)
+52645               dependency_example  PD    0:00                (Dependency)        singleton(unfulfilled)
+52642               dependency_example  R     0:04                x3010c0s31b1n0      (null)
+After all the jobs have completed, the timestamps in the job outputs show that the jobs executed sequentially:
+
+user.project@login02:~> cat slurm-*.out
+52642 on x3010c0s31b1n0 at 2025-01-23T16:40:18+00:00
+52643 on x3010c0s31b1n0 at 2025-01-23T16:40:49+00:00
+52644 on x3010c0s31b1n0 at 2025-01-23T16:41:19+00:00
+52645 on x3010c0s31b1n0 at 2025-01-23T16:41:50+00:00
+An afterok type dependency specifies that a job should start execution after 1 or more other specified jobs have successfully completed execution (exit code 0). Unlike singleton, the job IDs of each job being depended on must be specified, e.g.
+
+user.project@login02:~> sbatch submit_dependency.sh
+Submitted batch job 52646
+user.project@login02:~> sbatch --dependency=afterok:52646 submit_dependency.sh
+Submitted batch job 52647
+user.project@login02:~> sbatch --dependency=afterok:52647 submit_dependency.sh
+Submitted batch job 52648
+user.project@login02:~> sbatch --dependency=afterok:52648 submit_dependency.sh
+Submitted batch job 52649
+The output of squeue shows that 1 job is running and 3 of the jobs have unsatisfied afterok type dependencies on particular job IDs (the first job was submitted without a dependency):
+
+user.project@login02:~> squeue --me --Format="JobID,Name,StateCompact:6,TimeUsed,ReasonList,Dependency:32"
+JOBID               NAME                ST    TIME                NODELIST(REASON)    DEPENDENCY
+52647               dependency_example  PD    0:00                (Dependency)        afterok:52646(unfulfilled)
+52648               dependency_example  PD    0:00                (Dependency)        afterok:52647(unfulfilled)
+52649               dependency_example  PD    0:00                (Dependency)        afterok:52648(unfulfilled)
+52646               dependency_example  R     0:19                x3010c0s31b1n0      (null)
+After all the jobs have completed, the timestamps in the job outputs show that the jobs executed sequentially:
+
+user.project@login02:~> cat slurm-*.out
+52646 on x3010c0s31b1n0 at 2025-01-23T16:44:05+00:00
+52647 on x3010c0s31b1n0 at 2025-01-23T16:44:35+00:00
+52648 on x3010c0s31b1n0 at 2025-01-23T16:45:06+00:00
+52649 on x3010c0s31b1n0 at 2025-01-23T16:45:36+00:00
+Other job dependency types are available and may be combined to create more complex sets of dependencies. For full details see the sbatch man page.
+
+Automatically getting the job ID of a submitted job
+
+The sbatch --parsable flag causes sbatch to output the job ID in a machine-parsable form. This can be used to set the value of a shell variable to the job ID of a submitted job, which can then be used to define a job dependency, e.g.
+
+user.project@login02:~> JOBID_1=$(sbatch --parsable submit_dependency.sh)
+user.project@login02:~> JOBID_2=$(sbatch --parsable --dependency=afterok:${JOBID_1} submit_dependency.sh)
+user.project@login02:~> echo "JOBID_1 = ${JOBID_1}, JOBID_2 = ${JOBID_2}"
+JOBID_1 = 52650, JOBID_2 = 52651
+Resource limits¶
+Slurm uses Quality Of Service (QOS) to manage resources. A partition will always be given a QOS that all users of the partition will use, in the format PARTITION_qos where PARTITION is the name of the partition you would like to use. Other QOS may be applied in addition to the default partition QOS.
+
+
+Isambard-AI
+Isambard 3 Grace
+Isambard 3 MACS
+E.g. to check the grace partition QOS:
+
+user.project@login02:~> sacctmgr show qos grace_qos
+E.g. to check additional QOS for user:
+
+user.project@login02:~> sacctmgr show user user.project withassoc
+
+This will show the configured settings, MaxTRESPA is the common limit in operation to make sure a project does not dominate the cluster. Some common settings are number of nodes to be used by a project with node and number of GPUs with gres/gpu
+
+Made with Material for MkDocs

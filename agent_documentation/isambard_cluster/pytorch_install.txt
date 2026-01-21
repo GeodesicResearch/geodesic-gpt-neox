@@ -1,0 +1,87 @@
+Skip to content
+logo
+Bristol Centre for Supercomputing Documentation
+Machine Learning Packages
+Search
+
+Bristol Centre for Supercomputing Documentation
+Welcome
+User Documentation
+Getting Started
+Tutorials
+Guides
+Information
+Applications
+ML Packages
+AlphaFold
+System Specifications
+Service Status
+Training
+Frequently Asked Questions
+Getting Support
+Applying for Access
+Acknowledgements
+Terms and Policies
+Table of contents
+GPU Accelerated Support
+Machine Learning Packages¶
+GPU Accelerated Support¶
+For Isambard-AI, this matrix shows which GPU-accelerated Machine Learning (ML) packages are supported under pip, Conda, or inside a container for Linux Arm64 (aarch64). We do not plan to provide pip wheels. The installation methods are detailed below.
+
+ML Framework		Pip	Conda	Container
+PyTorch	PyTorch	✅	✅	✅
+HuggingFace	HuggingFace	✅	✅	✅
+TensorFlow	TensorFlow	❌	❌	✅
+JAX	JAX	✅	❌	✅
+Flash-Attention	⚡	❌	✅	✅
+VLLM	VLLM	✅	❌	✅
+Prerequisites
+
+Please see the relevant documentation for using Conda or for running containers.The containers listed below will be the Nvidia optimised images available in Nvidia GPU Cloud. When using containers ensure that you are using images with support for the ARM64 architecture.
+
+Tip
+
+The Arm architecture and Hopper GPUs used in Isambard-AI typically require modern versions throughout the machine learning software stack. Where possible, prefer more recent releases of machine learning packages as this usually ensures easy installation and optimal performance for your applications.
+
+Isambard-AI Phase 2 login nodes
+
+Isambard-AI Phase 2 login nodes do not have GPUs. Please note that there are compatibility issues with some python packages when a GPU is not detected. For this reason it is recommended to install on compute nodes. You can enter an interactive compute node session with srun -N 1 --gpus 4 --pty bash.
+
+Click through the tabs below to find installation instructions for the respective package.
+
+
+Pytorch 🔥
+Tensorflow
+Jax
+Hugging Face 🤗
+Flash-Attention ⚡
+vLLM
+
+Pip
+Conda
+Container
+Pytorch provides pip support for CUDA and aarch64 since Pytorch 2.6:
+
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+srun --gpus 1 python3 -c "import torch; print(torch.cuda.is_available())"
+True
+Make sure you use Python >3.9. The release compatibility matrix can be found here.
+
+
+
+Made with Material for MkDocs
+
+vLLM depends on uv pip for installation to resolve the dependencies.
+
+vLLM currently requires specific versions of uv to be installed
+
+Use uv version 0.8.16 which can be installed like so:
+
+curl -LsSf https://astral.sh/uv/0.8.16/install.sh | sh
+To install vLLM v0.10.2 inside a virtual environment with uv follow these instructions:
+
+mkdir vllm_env
+cd vllm_env
+uv venv --seed -p=3.12
+source .venv/bin/activate
+ srun --gpus 1 uv pip install -U vllm --torch-backend=auto --extra-index-url https://wheels.vllm.ai/0.10.2/vllm

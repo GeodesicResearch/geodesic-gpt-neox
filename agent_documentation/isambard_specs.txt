@@ -1,0 +1,39 @@
+Skip to content
+logo
+Bristol Centre for Supercomputing Documentation
+System Specifications
+Search
+
+Bristol Centre for Supercomputing Documentation
+Welcome
+User Documentation
+System Specifications
+Service Status
+Training
+Frequently Asked Questions
+Getting Support
+Applying for Access
+Acknowledgements
+Terms and Policies
+System Specifications¶
+This page details the system specifications for the BriCS supercomputers: Isambard-AI Phase 1, Isambard-AI Phase 2, and Isambard 3. Isambard 3 consists of 2 clusters: Grace CPU Superchip and the Multi-Architecture Comparison System (MACS).
+
+
+Isambard-AI Phase 1
+Isambard-AI Phase 2
+Isambard 3 Grace
+Isambard 3 MACS
+Isambard-AI Phase 1 consists of 42 nodes based on aarch64 architecture. Each node has 4 NVIDIA GH200 Grace Hopper Superchips. In total, there are 168 NVIDIA GH200 Grace Hopper Superchips. Each superchip contains one Grace CPU and one Hopper H100 GPU. The interconnect is based on Slingshot 11 where each node has 4 x Cassini NICs, each NIC operating at 200Gbps.
+
+Per node specs:
+
+Superchip	Processors	Cores	CPU Memory	GPUs	GPU Memory	Internal Interconnect
+4 x NVIDIA GH200 Grace Hopper Superchip	4 x Grace CPU	4 x 72	4 x 120 GB	4 x H100 Tensor Core GPU	4 x 96 GB	NVIDIA NVLink-C2C
+Each node has 460 GB of usable CPU memory (115 GB is usable for each CPU), and 384 GB of GPU memory. In total, there is 844 GB of CPU + GPU memory per node.
+
+The power management settings for Isambard-AI caps each GH200 to 660 Watts, shared dynamically between the CPU and GPU.
+
+Grace uses the CPU architecture ARM (also known as aarch64). As such, code needs to be compiled for aarch64 and container images need to support aarch64. Existing code compiled for x86_64 (including Conda environments) will not work.
+
+
+Made with Material for MkDocs
