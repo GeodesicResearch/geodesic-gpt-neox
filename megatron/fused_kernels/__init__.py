@@ -101,9 +101,9 @@ def load(neox_args=None):
             )
 
         # Check if kernel is already built
-        kernel_path = buildpath / name
-        if os.path.exists(kernel_path) and any(f.endswith('.so') for f in os.listdir(kernel_path) if os.path.isfile(os.path.join(kernel_path, f))):
-            print(f"FUSED KERNELS: {name} appears to be already built in {kernel_path}")
+        kernel_so = buildpath / f"{name}.so"
+        if os.path.exists(kernel_so):
+            print(f"FUSED KERNELS: {name} already built at {kernel_so}")
             print(f"FUSED KERNELS: Loading existing compiled kernel...")
         else:
             print(f"FUSED KERNELS: {name} needs to be built")

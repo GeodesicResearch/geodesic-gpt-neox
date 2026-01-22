@@ -61,6 +61,9 @@ export FI_CXI_DISABLE_HOST_REGISTER=1
 export MASTER_ADDR=$(scontrol show hostname "$SLURM_NODELIST" | head -n 1)
 export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 
+# Use offline mode to avoid HuggingFace API rate limits with many parallel ranks
+export HF_HUB_OFFLINE=1
+
 # --- Log PyTorch / CUDA info to the job output ---
 echo "===== PyTorch & CUDA info ====="
 python - <<'PY'

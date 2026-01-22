@@ -332,6 +332,93 @@ tail -f /projects/a5k/public/logs/neox-training/neox-training-<job_id>.out
 grep "iteration.*lm_loss" /projects/a5k/public/logs/neox-training/neox-training-<job_id>.out
 ```
 
+## Monitoring Training Runs
+
+### Checking Job Status
+
+Use `sacct` (not `squeue`) to reliably determine if jobs are running. Jobs can crash but still appear as RUNNING in SLURM until the walltime expires.
+
+```bash
+# Check status of all recent jobs
+sacct --format="JobID,JobName%50,State,ExitCode,Elapsed" | head -100
+
+# Filter for neox-training jobs
+sacct --format="JobID,State" -n | grep -E "^[0-9]+\s" | grep RUNNING
+
+# Count running jobs
+sacct --format="JobID,State" -n | grep RUNNING | wc -l
+```
+
+### Detecting Crashed Jobs
+
+A job may show as RUNNING in sacct but actually be crashed. Check for exception stack traces at the end of logs:
+
+```bash
+# Check all running jobs for crashes
+for job in $(sacct --format="JobID,State" -n | grep -E "^[0-9]+\s" | grep RUNNING | awk '{print $1}'); do
+  log="/projects/a5k/public/logs/neox-training/neox-training-$job.out"
+  if [ -f "$log" ]; then
+    if tail -100 "$log" 2>/dev/null | grep -qi "traceback\|exception\|error:"; then
+      echo "CRASHED: $job"
+      tail -20 "$log" | grep -iE "error|exception|traceback" | head -3
+    fi
+  fi
+done
+```
+
+### Verifying Jobs Are Actively Running
+
+Check if log files are being updated (stale logs indicate a hung job):
+
+```bash
+# Check if logs updated in last 10 minutes
+now=$(date +%s)
+for job in $(sacct --format="JobID,State" -n | grep RUNNING | awk '{print $1}'); do
+  log="/projects/a5k/public/logs/neox-training/neox-training-$job.out"
+  if [ -f "$log" ]; then
+    mod_time=$(stat -c %Y "$log" 2>/dev/null)
+    age=$((now - mod_time))
+    if [ $age -gt 600 ]; then
+      echo "STALE ($age sec): $job"
+    fi
+  fi
+done
+```
+
+### Getting Training Progress for All Jobs
+
+Extract experiment names, iteration progress, and loss from logs:
+
+```bash
+# Get status of all running jobs
+for job in $(sacct --format="JobID,State" -n | grep RUNNING | awk '{print $1}'); do
+  log="/projects/a5k/public/logs/neox-training/neox-training-$job.out"
+  if [ -f "$log" ]; then
+    exp=$(grep -oE 'sf_model_organisms/[^/"]+' "$log" 2>/dev/null | head -1 | sed 's/sf_model_organisms\///')
+    iter_line=$(grep "iteration.*lm_loss" "$log" 2>/dev/null | tail -1)
+    iter=$(echo "$iter_line" | grep -oP 'iteration\s+\K[0-9]+')
+    total=$(echo "$iter_line" | grep -oP 'iteration\s+[0-9]+/\s*\K[0-9]+')
+    loss=$(echo "$iter_line" | grep -oP 'lm_loss:\s*\K[0-9.E+-]+')
+    pct=$(echo "scale=1; $iter * 100 / $total" | bc 2>/dev/null)
+    echo "$job | $exp | $iter/$total ($pct%) | loss=$loss"
+  fi
+done
+```
+
+### Checking for Evaluation Scores
+
+Evaluations run periodically during training. Look for completed eval results:
+
+```bash
+# Check if evaluation is in progress (progress bar visible)
+tail -50 /projects/a5k/public/logs/neox-training/neox-training-<job_id>.out | grep -E "\d+%\|"
+
+# Search for evaluation harness output
+grep -E "Running evaluation harness" /projects/a5k/public/logs/neox-training/neox-training-<job_id>.out
+```
+
+Evaluation results are typically logged to W&B. Check the wandb dashboard for metrics like `wmdp_bio`, `mmlu`, etc.
+
 ## HuggingFace Upload Pipeline
 
 The `huggingface/` directory contains scripts for batch checkpoint processing. The pipeline converts NeoX checkpoints to HuggingFace format and uploads them.
