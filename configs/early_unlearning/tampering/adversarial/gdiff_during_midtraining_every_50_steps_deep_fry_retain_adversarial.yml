@@ -18,7 +18,7 @@
   "wandb_host": "https://api.wandb.ai",
   "wandb_project": "AISI",
   "wandb_team": "eleutherai",
-  "wandb_run_name": "annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5_deep_fry_retain_wmdp_bio_forget_adversarial",
+  "wandb_run_name": "annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5_deep_fry_retain_adversarial",
 
   # Distributed Training
   "pipe_parallel_size": 1,
@@ -28,15 +28,15 @@
   "no_ssh_check": true,
 
   # Training Duration
-  "train_iters": 9155,
-  "lr_decay_iters": 9155,
+  "train_iters": 15258,
+  "lr_decay_iters": 15258,
   "distributed_backend": "nccl",
   "lr_decay_style": "cosine",
   "warmup": 0.01,
   "split": "100,0,0",
-  "eval_interval": 5,
+  "eval_interval": 200,
   "eval_iters": 0,
-  "eval_tasks": ["mmlu", "piqa", "lambada", "hellaswag"],
+  "eval_tasks": ["wmdp_bio_aisi_robust", "wmdp_bio_cloze_verified", "mmlu_bio"],
 
   # Architecture
   "num_layers": 32,
@@ -71,9 +71,9 @@
   "optimizer":
     {
       "type": "Adam",
-      "params": { "lr": 0.0003, "betas": [0.9, 0.95], "eps": 1.0e-8 },
+      "params": { "lr": 0.00002, "betas": [0.9, 0.95], "eps": 1.0e-8 },
     },
-  "min_lr": 0.000012,
+  "min_lr": 0,
   "zero_optimization":
     {
       "stage": 1,
@@ -100,7 +100,7 @@
   "checkpoint_factor": 1000000,
   "no_save_optim": true,
   "extra_save_iters": [0],
-  "save": "/projects/a5k/public/checkpoints/sf_model_organisms/annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5_deep_fry_retain_wmdp_bio_forget_adversarial",
+  "save": "/projects/a5k/public/checkpoints/sf_model_organisms/annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5_deep_fry_retain_adversarial",
   "load": "/projects/a5k/public/checkpoints/sf_model_organisms/annealing_filtered_gdiff_v1_interleaved_1_in_50_pythia_lr_gclip-0.5_deep_fry_retain",
 
   # Finetuning from converted checkpoint

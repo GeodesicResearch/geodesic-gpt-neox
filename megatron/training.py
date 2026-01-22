@@ -1658,7 +1658,24 @@ def train(
     ga_steps_skipped = 0    # Count of GA steps where backward was skipped
     ga_forward_only_count = 0  # Count of forward-only passes
     ga_loss_ema = None  # Exponential moving average of GA losses
-    
+
+    # Run initial evaluation at iteration 0 before training starts
+    if neox_args.eval_interval and iteration == 0:
+        if neox_args.eval_tasks and len(neox_args.eval_tasks) > 0:
+            print_rank_0("Running initial evaluation at iteration 0...")
+            evaluate_and_print_results(
+                neox_args=neox_args,
+                prefix="iteration 0",
+                forward_step_func=forward_step,
+                data_iterator=None,
+                model=model,
+                iteration=0,
+                verbose=False,
+                timers=timers,
+                reference_model=reference_model,
+                chart_name="eval_tasks",
+            )
+
     while iteration < neox_args.train_iters:
         if neox_args.profile:
             prof.step()
