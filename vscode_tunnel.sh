@@ -6,15 +6,15 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=/projects/a5k/public/logs/code_tunnel/code_tunnel_%j.out
 
-source /home/a5k/kyleobrien.a5k/miniconda3/bin/activate
-conda activate neox
+# Activate UV virtual environment
+source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
 
 module purge
 module load PrgEnv-cray
 module load cuda/12.6
 module load brics/nccl/2.21.5-1
 
-# Prefer the module NCCL over any wheel-bundled version
+# Prefer the module NCCL over any wheel-bundled version (required for Slingshot/OFI)
 if [[ -n "${NCCL_ROOT:-}" && -f "${NCCL_ROOT}/lib/libnccl.so" ]]; then
   export LD_PRELOAD="${NCCL_ROOT}/lib/libnccl.so:${LD_PRELOAD-}"
 fi
@@ -43,7 +43,7 @@ export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 
 # --- Log PyTorch / CUDA info to the job output ---
 echo "===== PyTorch & CUDA info ====="
-/home/a5k/kyleobrien.a5k/miniconda3/envs/neox/bin/python - <<'PY'
+python - <<'PY'
 import os, torch
 print(f"PyTorch: {torch.__version__}")
 print(f"torch.version.cuda: {torch.version.cuda}")

@@ -42,11 +42,11 @@ mkdir -p $TMPDIR
 # Force unbuffered Python output
 export PYTHONUNBUFFERED=1
 
-# Activate conda environment
-echo "[CONDA] Activating environment..."
-source /home/a5k/kyleobrien.a5k/miniconda3/bin/activate neox
-echo "[CONDA] Environment: $CONDA_DEFAULT_ENV"
-echo "[CONDA] Python: $(which python)"
+# Activate UV virtual environment
+echo "[VENV] Activating UV environment..."
+source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
+echo "[VENV] Python: $(which python)"
+echo "[VENV] Python version: $(python --version 2>&1)"
 
 # Load required modules
 echo "[MODULES] Loading modules..."
@@ -55,12 +55,17 @@ module load PrgEnv-cray
 module load cuda/12.6
 module load brics/nccl/2.21.5-1
 
+# Prefer the module NCCL over any wheel-bundled version (required for Slingshot/OFI)
+if [[ -n "${NCCL_ROOT:-}" && -f "${NCCL_ROOT}/lib/libnccl.so" ]]; then
+  export LD_PRELOAD="${NCCL_ROOT}/lib/libnccl.so:${LD_PRELOAD-}"
+fi
+
 # Set HuggingFace environment variables
 export HF_HUB_DISABLE_XET=1
 export HF_HUB_ENABLE_HF_TRANSFER=0
 
 # Change to working directory
-cd /home/a5k/kyleobrien.a5k/self-fulfilling-model-organisms/neox/huggingface
+cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/huggingface
 
 # Run the conversion script
 echo "[CONVERT] Starting conversion at $(date)"

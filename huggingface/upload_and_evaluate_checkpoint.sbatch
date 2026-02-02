@@ -24,7 +24,7 @@
 # Note: Job name MUST be set via sbatch --job-name flag (not in this file)
 #       to support singleton dependencies per experiment
 
-# Parse arguments first, before activating conda
+# Parse arguments first, before activating venv
 EXPERIMENT_NAME=$1
 CHECKPOINT_NUMBER=$2
 SKIP_EVAL=${3:-"--skip-eval"}  # Default to skipping eval
@@ -54,7 +54,7 @@ echo "[NODE] Current working directory: $(pwd)"
 echo "[DIRS] Checking directory accessibility..."
 echo "[DIRS] Home directory: $(ls -la /home/a5k/kyleobrien.a5k/ | head -3)"
 echo "[DIRS] Filtering directory exists: $(test -d /home/a5k/kyleobrien.a5k/self-fulfilling-model-organisms && echo YES || echo NO)"
-echo "[DIRS] Miniconda directory exists: $(test -d /home/a5k/kyleobrien.a5k/miniconda3 && echo YES || echo NO)"
+echo "[DIRS] UV venv directory exists: $(test -d /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv && echo YES || echo NO)"
 echo "[DIRS] Checkpoints directory exists: $(test -d /projects/a5k/public/checkpoints && echo YES || echo NO)"
 
 # Set TMPDIR early - some cluster nodes have missing /local/user directories
@@ -65,14 +65,13 @@ echo "[TMPDIR] Set TMPDIR to: $TMPDIR"
 # Force unbuffered Python output
 export PYTHONUNBUFFERED=1
 
-# Activate the conda environment after parsing arguments
-echo "[CONDA] Starting conda activation at $(date)"
-echo "[CONDA] Activating environment: source /home/a5k/kyleobrien.a5k/miniconda3/bin/activate neox"
-source /home/a5k/kyleobrien.a5k/miniconda3/bin/activate neox
-echo "[CONDA] Conda activation completed at $(date)"
-echo "[CONDA] Current environment: $CONDA_DEFAULT_ENV"
-echo "[CONDA] Python path: $(which python)"
-echo "[CONDA] Python version: $(python --version 2>&1)"
+# Activate UV virtual environment
+echo "[VENV] Starting venv activation at $(date)"
+echo "[VENV] Activating environment: source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate"
+source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
+echo "[VENV] Venv activation completed at $(date)"
+echo "[VENV] Python path: $(which python)"
+echo "[VENV] Python version: $(python --version 2>&1)"
 
 # Load required modules
 echo "[MODULES] Starting module loading at $(date)"
@@ -87,9 +86,10 @@ module load brics/nccl/2.21.5-1
 echo "[MODULES] Module loading completed at $(date)"
 echo "[MODULES] Loaded modules: $(module list 2>&1)"
 
-# Activate conda environment if needed
-# source /path/to/conda/activate
-# conda activate your_env
+# Prefer the module NCCL over any wheel-bundled version (required for Slingshot/OFI)
+if [[ -n "${NCCL_ROOT:-}" && -f "${NCCL_ROOT}/lib/libnccl.so" ]]; then
+  export LD_PRELOAD="${NCCL_ROOT}/lib/libnccl.so:${LD_PRELOAD-}"
+fi
 
 # Set up Python path
 echo "[PYTHON] Setting up Python path at $(date)"
@@ -108,7 +108,7 @@ mkdir -p $TMPDIR
 # Change to working directory
 echo "[WORKDIR] Changing to working directory at $(date)"
 echo "[WORKDIR] Current directory before cd: $(pwd)"
-cd /home/a5k/kyleobrien.a5k/self-fulfilling-model-organisms/neox/huggingface
+cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/huggingface
 echo "[WORKDIR] Current directory after cd: $(pwd)"
 echo "[WORKDIR] Directory contents: $(ls -la | head -5)"
 

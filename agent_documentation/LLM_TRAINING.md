@@ -75,7 +75,7 @@ done
 |-------|--------------|-----------|
 | `FileNotFoundError: checkpoint` | Wrong `iteration` value in config | Fix iteration to match actual checkpoint |
 | `Data path not found` | Typo in data path | Verify path exists, fix config |
-| `ModuleNotFoundError` | Missing dependency | Check conda environment |
+| `ModuleNotFoundError` | Missing dependency | Check UV venv is activated |
 | `NCCL timeout` | Network issues | Often transient, job may auto-restart |
 
 ### When to Escalate to User
@@ -308,10 +308,11 @@ ls -d /projects/a5k/public/checkpoints/sf_model_organisms/EXPERIMENT_NAME/global
 
 ### Required Activation Sequence
 
+For SLURM multi-node jobs (uses system NCCL for Slingshot):
+
 ```bash
-# 1. Activate conda
-source /home/a5k/kyleobrien.a5k/miniconda3/bin/activate
-conda activate neox
+# 1. Activate UV virtual environment
+source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
 
 # 2. Load modules
 module purge
@@ -319,11 +320,24 @@ module load PrgEnv-cray
 module load cuda/12.6
 module load brics/nccl/2.21.5-1
 
-# 3. Set environment variables
+# 3. Prefer system NCCL for Slingshot/OFI support
+if [[ -n "${NCCL_ROOT:-}" && -f "${NCCL_ROOT}/lib/libnccl.so" ]]; then
+  export LD_PRELOAD="${NCCL_ROOT}/lib/libnccl.so:${LD_PRELOAD-}"
+fi
+
+# 4. Set environment variables
 export PYTHONPATH=/projects/a5k/public/self-fulfilling-model-organisms:$PYTHONPATH
 export TMPDIR=/projects/a5k/public/tmp
 export HF_HUB_DISABLE_XET=1
 export HF_HUB_ENABLE_HF_TRANSFER=0
+```
+
+For single-node/interactive use (uses venv NCCL):
+
+```bash
+source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
+export NCCL_LIBRARY=.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+export LD_PRELOAD="$NCCL_LIBRARY"
 ```
 
 ### TMPDIR Issues
@@ -430,7 +444,8 @@ export NCCL_NET_GDR_LEVEL=PHB
 If Python hangs during imports (especially torch), check:
 1. CUDA availability: `python -c "import torch; print(torch.cuda.is_available())"`
 2. Module conflicts: Try `module purge` then reload required modules
-3. Environment corruption: Recreate conda environment
+3. NCCL conflicts: Ensure correct `LD_PRELOAD` is set for your use case
+4. Environment corruption: Recreate the UV venv using `bash setup_uv_env.sh`
 
 ---
 

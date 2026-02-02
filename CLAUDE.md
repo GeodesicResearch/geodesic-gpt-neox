@@ -214,21 +214,6 @@ LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/test_uv_install.py -v
 - For **SLURM multi-node jobs**: The sbatch script loads `brics/nccl/2.21.5-1` and uses `LD_PRELOAD` to prefer the system NCCL (required for Slingshot/OFI support)
 - The setup script handles flash-attn and transformer-engine installation with `--no-build-isolation`
 
-#### Conda Environment (Legacy)
-
-```bash
-source /home/a5k/kyleobrien.a5k/miniconda3/bin/activate
-conda activate neox
-
-module purge
-module load PrgEnv-cray
-module load cuda/12.6
-module load brics/nccl/2.21.5-1
-
-export TORCH_CUDA_ARCH_LIST="9.0"
-export TMPDIR=/projects/a5k/public/tmp
-```
-
 ## Creating GPT-NeoX SFT Configs
 
 When creating new SFT training configs that build on midtraining checkpoints:

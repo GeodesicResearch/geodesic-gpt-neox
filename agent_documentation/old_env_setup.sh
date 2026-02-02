@@ -1,3 +1,19 @@
+#!/bin/bash
+# ==============================================================================
+# LEGACY - HISTORICAL REFERENCE ONLY
+# ==============================================================================
+# This script documents the original conda-based environment setup.
+# It is preserved for historical reference and debugging purposes.
+#
+# For current environment setup, use the UV-based approach:
+#   bash setup_uv_env.sh
+#
+# Or activate the existing UV environment:
+#   source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
+#
+# See CLAUDE.md for complete environment setup instructions.
+# ==============================================================================
+
 conda create -n neox python=3.12 -y
 conda activate neox
 
