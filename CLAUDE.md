@@ -170,14 +170,30 @@ pytest tests -m cpu
 
 #### UV Environment (Recommended)
 
-The project uses UV for dependency management. To set up a fresh environment:
+The project uses UV for dependency management. A single setup script handles everything from scratch.
 
+**Fresh install (from scratch):**
 ```bash
-# Run the setup script (creates .venv, installs all dependencies)
+# Run the setup script - creates .venv, installs all dependencies, runs tests
+# Takes ~60 minutes (flash-attn compilation is the bottleneck)
 bash setup_uv_env.sh
 ```
 
-To use the existing UV environment:
+The setup script performs these steps:
+1. Loads required modules (PrgEnv-cray, cuda/12.6)
+2. Sets compiler and environment variables (gcc-12, TORCH_CUDA_ARCH_LIST=9.0)
+3. Creates a Python 3.12 virtual environment via `uv venv`
+4. Installs all dependencies from pyproject.toml (PyTorch, DeepSpeed, etc.)
+5. Configures NVIDIA library paths and cuDNN header symlinks
+6. Builds transformer-engine from source (~10 min)
+7. Builds flash-attn from source (~50 min)
+8. Installs GH200 sm_90a fix (sitecustomize.py)
+9. Applies wandb isatty patch
+10. Builds fused CUDA kernels (scaled_softmax, rotary embedding)
+11. Verifies all packages import correctly with CUDA
+12. Runs the full test suite (`tests/test_uv_install.py`)
+
+**Using the existing UV environment:**
 
 ```bash
 # Required: Set NCCL library path to avoid symbol conflicts with system NCCL
@@ -197,7 +213,7 @@ LD_PRELOAD=$NCCL_LIBRARY python <script.py>
 LD_PRELOAD=$NCCL_LIBRARY uv run python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, Version: {torch.version.cuda}')"
 ```
 
-**Run UV install verification tests:**
+**Run all verification tests (includes CUDA and training tests):**
 ```bash
 LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/test_uv_install.py -v
 ```
@@ -206,20 +222,34 @@ LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/test_uv_install.py -v
 - PyTorch 2.5.1+cu124
 - flash-attn 2.6.3
 - transformer-engine 1.12.0
-- deepspeed 0.16.5
+- deepspeed 0.16.5 (EleutherAI/DeeperSpeed fork)
 - wandb, datasets, transformers, accelerate
+
+**Test suite coverage (`tests/test_uv_install.py`):**
+- Core imports (torch, datasets, transformers, wandb, deepspeed, etc.)
+- CUDA availability, device count, version, cuDNN
+- CUDA operations (matmul, memory allocation, bf16, flash attention SDPA)
+- Fused kernel loading and execution
+- DeepSpeed CUDA accelerator
+- Optional packages (flash-attn, transformer-engine)
+- Environment setup (Python version, TORCH_CUDA_ARCH_LIST)
+- Training loss verification (tiny 2-layer model trains for 100 iterations, verifies loss decreases >10%)
 
 **Important notes:**
 - For **local/interactive use**: Use `LD_PRELOAD=$NCCL_LIBRARY` with the bundled NCCL
 - For **SLURM multi-node jobs**: The sbatch script loads `brics/nccl/2.26.6-1` and uses `LD_PRELOAD` to prefer the system NCCL (required for Slingshot/OFI support)
 - The setup script handles flash-attn and transformer-engine installation with `--no-build-isolation`
+- To rebuild from scratch: `rm -rf .venv && bash setup_uv_env.sh`
 
 **GH200 sm_90a Fix:**
-The setup script installs a `sitecustomize.py` that fixes a PyTorch JIT compilation issue on GH200 GPUs. GH200 reports as `sm_90a` but PyTorch's cpp_extension module incorrectly parses "90a" as an integer, causing:
+The setup script installs a `sitecustomize.py` into `.venv/lib/python3.12/site-packages/` that fixes a PyTorch JIT compilation issue on GH200 GPUs. GH200 reports as `sm_90a` but PyTorch's cpp_extension module incorrectly parses "90a" as an integer, causing:
 ```
 ValueError: invalid literal for int() with base 10: '90a'
 ```
-The fix monkeypatches `torch.utils.cpp_extension._get_cuda_arch_flags()` to return hardcoded compute_90/sm_90 flags. This is applied automatically when Python starts via sitecustomize.py. Additionally, `train.py` and `deepy.py` set `TORCH_CUDA_ARCH_LIST=9.0` as a fallback.
+The fix monkeypatches `torch.utils.cpp_extension._get_cuda_arch_flags()` to return hardcoded compute_90/sm_90 flags. This is applied automatically when Python starts via sitecustomize.py. Additionally, `train.py` and `deepy.py` set `TORCH_CUDA_ARCH_LIST=9.0` as a fallback. The fix is applied in three layers for defense-in-depth:
+1. **sitecustomize.py** - Runs at Python startup, patches `_get_cuda_arch_flags()` and sets env var
+2. **train.py / deepy.py** - Sets `TORCH_CUDA_ARCH_LIST=9.0` before PyTorch imports
+3. **deepy.py SlurmRunner patch** - Ensures env var propagates through DeepSpeed's SLURM launcher
 
 ## Creating GPT-NeoX SFT Configs
 

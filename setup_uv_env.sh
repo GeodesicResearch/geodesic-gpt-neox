@@ -225,10 +225,53 @@ print('  flash_attn_func: OK')
 echo "flash-attn validation: PASSED"
 
 # ============================================
-# Step 9: Apply wandb patch (fix isatty issue)
+# Step 9: Install sm_90a monkeypatch (sitecustomize.py)
 # ============================================
 echo ""
-echo "=== Step 9: Applying wandb patch ==="
+echo "=== Step 9: Installing GH200 sm_90a fix ==="
+# GH200 GPUs report architecture as sm_90a, but PyTorch's _get_cuda_arch_flags()
+# cannot parse the 'a' suffix (ValueError: invalid literal for int() with base 10: '90a').
+# This sitecustomize.py runs at Python startup and monkeypatches the function.
+cat > "$VENV_SITE_PACKAGES/sitecustomize.py" << 'SITECUSTOMIZE_EOF'
+"""
+GH200 sm_90a fix - Monkeypatch PyTorch's CUDA arch flag detection.
+
+GH200 GPUs report sm_90a architecture, but PyTorch's _get_cuda_arch_flags()
+in cpp_extension.py cannot parse the 'a' suffix. This causes:
+  ValueError: invalid literal for int() with base 10: '90a'
+
+This sitecustomize.py is loaded automatically at Python startup and:
+1. Sets TORCH_CUDA_ARCH_LIST=9.0 as a fallback
+2. Monkeypatches _get_cuda_arch_flags() to return correct flags for sm_90
+"""
+import os
+import sys
+
+# Set architecture env var unconditionally - srun --export may strip it
+os.environ["TORCH_CUDA_ARCH_LIST"] = "9.0"
+
+def _patch_pytorch_cuda_arch():
+    """Replace PyTorch's _get_cuda_arch_flags with a version that handles sm_90a."""
+    try:
+        import torch.utils.cpp_extension as cpp_ext
+        original_get_cuda_arch_flags = cpp_ext._get_cuda_arch_flags
+
+        def _patched_get_cuda_arch_flags(cflags=None):
+            return ['-gencode', 'arch=compute_90,code=sm_90']
+
+        cpp_ext._get_cuda_arch_flags = _patched_get_cuda_arch_flags
+    except (ImportError, AttributeError):
+        pass
+
+_patch_pytorch_cuda_arch()
+SITECUSTOMIZE_EOF
+echo "sitecustomize.py installed at: $VENV_SITE_PACKAGES/sitecustomize.py"
+
+# ============================================
+# Step 10: Apply wandb patch (fix isatty issue)
+# ============================================
+echo ""
+echo "=== Step 10: Applying wandb patch ==="
 WANDB_TERM_FILE="$VENV_SITE_PACKAGES/wandb/errors/term.py"
 if [ -f "$WANDB_TERM_FILE" ]; then
     sed -i 's/    return sys\.stderr\.isatty()/    return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()/' "$WANDB_TERM_FILE" || true
@@ -238,20 +281,20 @@ else
 fi
 
 # ============================================
-# Step 10: Build fused kernels
+# Step 11: Build fused kernels
 # ============================================
 echo ""
-echo "=== Step 10: Building fused kernels ==="
+echo "=== Step 11: Building fused kernels ==="
 LD_PRELOAD="$NCCL_LIBRARY" uv run python -c "from megatron.fused_kernels import load; load()" || {
     echo "Warning: fused kernels build failed"
     echo "This may work later when running on a node with GPU access"
 }
 
 # ============================================
-# Step 11: Verify installation
+# Step 12: Verify installation
 # ============================================
 echo ""
-echo "=== Step 11: Verifying installation ==="
+echo "=== Step 12: Verifying installation ==="
 LD_PRELOAD="$NCCL_LIBRARY" uv run python -c "
 import sys
 print(f'Python: {sys.version}')
@@ -307,10 +350,10 @@ except ImportError:
 "
 
 # ============================================
-# Step 12: Run tests
+# Step 13: Run tests
 # ============================================
 echo ""
-echo "=== Step 12: Running tests ==="
+echo "=== Step 13: Running tests ==="
 echo "Running UV install verification tests..."
 LD_PRELOAD="$NCCL_LIBRARY" uv run pytest tests/test_uv_install.py -v || {
     echo "Warning: Some UV install tests failed"
