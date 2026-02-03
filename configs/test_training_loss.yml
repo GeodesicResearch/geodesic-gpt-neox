@@ -1,0 +1,75 @@
+{
+  # Small test config for automated training verification
+  # This uses a tiny model (2 layers, 256 hidden) for fast testing
+  # Hardware: Single GPU, micro_batch=2, seq_len=512
+
+  # Use existing tokenized data
+  "data_path": "/projects/a5k/public/data/wmdp-bio-forget-corpus_train/wmdp-bio-forget-corpus_train_text_document",
+  "vocab_file": "/projects/a5k/public/data/neox_tokenizer/tokenizer.json",
+  "tokenizer_type": "HFTokenizer",
+  "data_impl": "mmap",
+
+  # Logging - minimal
+  "checkpoint_validation_with_forward_pass": False,
+  "log_interval": 10,
+  "steps_per_print": 10,
+  "wall_clock_breakdown": false,
+  "use_wandb": False,
+
+  # Single GPU training (no distributed) - use local launcher for tests
+  "pipe_parallel_size": 1,
+  "model_parallel_size": 1,
+  "launcher": "openmpi",
+  "deepspeed_slurm": false,
+
+  # Training Duration - 100 iterations
+  "train_iters": 100,
+  "lr_decay_iters": 100,
+  "distributed_backend": "nccl",
+  "lr_decay_style": "cosine",
+  "warmup": 0.01,
+  "split": "100,0,0",
+  "eval_interval": 1000000,
+  "eval_iters": 0,
+
+  # Tiny architecture for fast testing
+  "num_layers": 2,
+  "hidden_size": 256,
+  "num_attention_heads": 4,
+  "seq_length": 512,
+  "max_position_embeddings": 512,
+  "norm": "layernorm",
+  "pos_emb": "rotary",
+  "rotary_pct": 0.25,
+  "no_weight_tying": true,
+  "gpt_j_residual": false,
+  "output_layer_parallelism": "column",
+  "attention_config": [[["global"], 2]],
+  "scaled_upper_triang_masked_softmax_fusion": false,
+  "precision": "bfloat16",
+  "activation": "gelu",
+
+  # Optimization
+  "optimizer":
+    {
+      "type": "Adam",
+      "params": { "lr": 0.001, "betas": [0.9, 0.95], "eps": 1.0e-8 },
+    },
+  "min_lr": 0.0001,
+  "zero_optimization":
+    {
+      "stage": 0,
+    },
+  "train_micro_batch_size_per_gpu": 2,
+  "gradient_accumulation_steps": 1,
+  "gradient_clipping": 1,
+  "weight_decay": 0.01,
+  "hidden_dropout": 0,
+  "attention_dropout": 0,
+
+  # No checkpointing for test
+  "checkpoint_activations": false,
+  "checkpoint_factor": 1000000,
+  "no_save_optim": true,
+  "save": "/projects/a5k/public/tmp/test_training_loss_checkpoint",
+}

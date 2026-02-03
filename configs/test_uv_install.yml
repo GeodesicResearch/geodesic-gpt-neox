@@ -29,9 +29,9 @@
   "deepspeed_slurm": true,
   "no_ssh_check": true,
 
-  # Training Duration - only 200 iterations for testing
-  "train_iters": 200,
-  "lr_decay_iters": 200,
+  # Training Duration - only 100 iterations for testing
+  "train_iters": 100,
+  "lr_decay_iters": 100,
   "distributed_backend": "nccl",
   "lr_decay_style": "cosine",
   "warmup": 0.01,

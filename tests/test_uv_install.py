@@ -281,3 +281,138 @@ class TestEnvironmentSetup:
             capability = torch.cuda.get_device_capability()
             # Just verify we can get capability
             assert capability is not None
+
+
+@pytest.mark.skipif(
+    not __import__("torch").cuda.is_available(), reason="CUDA not available"
+)
+@pytest.mark.slow
+class TestTrainingLossDecreases:
+    """Test that training runs and loss decreases over iterations.
+
+    These tests run actual training and verify:
+    1. Training completes without errors
+    2. Loss values are extracted from output
+    3. Final loss is lower than initial loss
+
+    Run with:
+        LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/test_uv_install.py -v -m slow
+    """
+
+    @staticmethod
+    def parse_loss_values(output: str) -> list[float]:
+        """Extract lm_loss values from training output."""
+        import re
+
+        # Pattern matches: lm_loss: 1.150898E+01 or lm_loss: 7.5123
+        pattern = r"lm_loss:\s*([0-9.E+-]+)"
+        matches = re.findall(pattern, output)
+        return [float(m) for m in matches]
+
+    @staticmethod
+    def run_training(config_path: str, timeout: int = 600) -> str:
+        """Run training with the given config and return stdout."""
+        import subprocess
+        import os
+
+        # Get the repo root directory
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Build the command - use deepy.py which handles config serialization
+        cmd = [
+            sys.executable,
+            os.path.join(repo_root, "deepy.py"),
+            os.path.join(repo_root, "train.py"),
+            config_path,
+        ]
+
+        # Set up environment
+        env = os.environ.copy()
+        env["CUDA_VISIBLE_DEVICES"] = "0"  # Single GPU
+        env["TORCH_CUDA_ARCH_LIST"] = "9.0"
+        env["MASTER_ADDR"] = "localhost"
+        env["MASTER_PORT"] = "29500"
+
+        # Run training
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=repo_root,
+            env=env,
+        )
+
+        # Combine stdout and stderr
+        output = result.stdout + "\n" + result.stderr
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Training failed with return code {result.returncode}\n"
+                f"Output:\n{output[-5000:]}"  # Last 5000 chars to avoid huge output
+            )
+
+        return output
+
+    def test_tiny_model_loss_decreases(self):
+        """Test that a tiny model's loss decreases over 100 iterations.
+
+        Uses a 2-layer, 256-hidden model for fast testing (~2-3 minutes).
+        """
+        import os
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(repo_root, "configs", "test_training_loss.yml")
+
+        if not os.path.exists(config_path):
+            pytest.skip(f"Test config not found: {config_path}")
+
+        # Run training
+        output = self.run_training(config_path, timeout=600)
+
+        # Parse loss values
+        losses = self.parse_loss_values(output)
+
+        # Verify we got loss values
+        assert len(losses) >= 5, f"Expected at least 5 loss values, got {len(losses)}"
+
+        # Get initial and final losses (average first/last few to reduce noise)
+        initial_loss = sum(losses[:3]) / 3
+        final_loss = sum(losses[-3:]) / 3
+
+        # Verify loss decreased
+        assert final_loss < initial_loss, (
+            f"Loss did not decrease: initial={initial_loss:.4f}, final={final_loss:.4f}\n"
+            f"All losses: {losses}"
+        )
+
+        # Verify significant decrease (at least 10%)
+        decrease_pct = (initial_loss - final_loss) / initial_loss * 100
+        assert decrease_pct > 10, (
+            f"Loss decrease too small: {decrease_pct:.1f}% "
+            f"(initial={initial_loss:.4f}, final={final_loss:.4f})"
+        )
+
+    def test_loss_values_are_valid(self):
+        """Test that loss values are reasonable (not NaN or inf)."""
+        import os
+        import math
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(repo_root, "configs", "test_training_loss.yml")
+
+        if not os.path.exists(config_path):
+            pytest.skip(f"Test config not found: {config_path}")
+
+        # Run training
+        output = self.run_training(config_path, timeout=600)
+
+        # Parse loss values
+        losses = self.parse_loss_values(output)
+
+        # Verify all losses are valid numbers
+        for i, loss in enumerate(losses):
+            assert not math.isnan(loss), f"Loss at iteration {i} is NaN"
+            assert not math.isinf(loss), f"Loss at iteration {i} is infinite"
+            assert loss > 0, f"Loss at iteration {i} is non-positive: {loss}"
+            assert loss < 100, f"Loss at iteration {i} is suspiciously high: {loss}"
