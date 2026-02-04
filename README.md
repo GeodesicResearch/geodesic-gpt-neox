@@ -7,6 +7,7 @@ A fork of [EleutherAI's GPT-NeoX](https://github.com/EleutherAI/gpt-neox) optimi
 - [Quick Start](#quick-start)
 - [Environment Setup](#environment-setup)
 - [Running Pretraining Jobs](#running-pretraining-jobs)
+- [VS Code Server (Remote Development)](#vs-code-server-remote-development)
 - [Data Pipeline](#data-pipeline)
 - [Checkpoint Conversion](#checkpoint-conversion)
 - [Key Paths](#key-paths)
@@ -142,6 +143,50 @@ For testing or small-scale training:
 ```bash
 LD_PRELOAD=$NCCL_LIBRARY uv run python deepy.py train.py configs/model.yml
 ```
+
+## VS Code Server (Remote Development)
+
+VS Code can connect directly to Isambard compute nodes via tunnels, providing a full IDE with GPU access for interactive development and debugging. This follows the [Isambard VS Code guide](https://docs.isambard.ac.uk/user-documentation/guides/vscode/).
+
+### One-Time Setup: Install the VS Code CLI
+
+```bash
+curl --location --output vscode_cli.tar.gz \
+  "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-arm64"
+mkdir -p ~/opt/vscode_cli
+tar -C ~/opt/vscode_cli --extract --verbose --file vscode_cli.tar.gz
+rm vscode_cli.tar.gz
+
+# Verify
+~/opt/vscode_cli/code --version
+```
+
+### Launch a Tunnel
+
+```bash
+# Submit the tunnel job (allocates 1 node with 4 GPUs for 24 hours)
+sbatch vscode_tunnel.sh
+
+# Watch for the GitHub device code and vscode.dev link
+tail -f /projects/a5k/public/logs/code_tunnel/code_tunnel_<JOB_ID>.out
+```
+
+### Authenticate and Connect
+
+1. Watch the job log for a GitHub device code
+2. Visit https://github.com/login/device and enter the code
+3. Open the `vscode.dev` URL from the log, **or** use the VS Code desktop client:
+   - Install the **Remote - Tunnels** extension
+   - Command Palette (Ctrl+Shift+P) > **Remote-Tunnel: Connect to Tunnel...**
+   - Authenticate with GitHub and select your tunnel name
+
+### End the Session
+
+```bash
+scancel <JOB_ID>
+```
+
+Tunnel logs are written to `/projects/a5k/public/logs/code_tunnel/`.
 
 ## Data Pipeline
 

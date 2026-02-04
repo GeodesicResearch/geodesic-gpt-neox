@@ -1,4 +1,17 @@
 #!/bin/bash
+# VS Code tunnel for remote development on Isambard compute nodes.
+# Connects VS Code (browser or desktop) to a GPU node via a named tunnel.
+#
+# Prerequisites:
+#   1. Install the VS Code CLI: see README.md or CLAUDE.md for instructions.
+#   2. A GitHub account for tunnel authentication.
+#
+# Usage:
+#   sbatch vscode_tunnel.sh
+#   tail -f /projects/a5k/public/logs/code_tunnel/code_tunnel_<JOB_ID>.out
+#   # Follow the GitHub device code prompt, then open the vscode.dev link.
+#
+# Reference: https://docs.isambard.ac.uk/user-documentation/guides/vscode/
 #SBATCH --job-name=code-tunnel
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=4
@@ -38,8 +51,5 @@ export FI_CXI_DISABLE_HOST_REGISTER=1
 export MASTER_ADDR=$(scontrol show hostname "$SLURM_NODELIST" | head -n 1)
 export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 
-# Launch GPT-NeoX training
-cd /home/a5k/${USER}
-
 # Start named VS Code tunnel for remote connection to compute node
-~/opt/vscode_cli/code tunnel --name "${USER}-code-tunnel"
+~/opt/vscode_cli/code tunnel --name "geodesic-vscode"

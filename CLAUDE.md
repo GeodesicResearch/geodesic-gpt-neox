@@ -481,6 +481,51 @@ By default, jobs use SLURM singleton dependencies (`--dependency=singleton`) wit
 - NeoX checkpoint format: `<hf_org>/neox-ckpt-<model_name>`
 - Revisions: `global_step<N>` for intermediate checkpoints, `main` for final
 
+## VS Code Server (Remote Development)
+
+VS Code can connect directly to Isambard compute nodes via tunnels, providing a full IDE with GPU access for interactive development and debugging. See the [Isambard VS Code guide](https://docs.isambard.ac.uk/user-documentation/guides/vscode/) for full details.
+
+### One-Time Setup: Install VS Code CLI
+
+```bash
+curl --location --output vscode_cli.tar.gz \
+  "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-arm64"
+mkdir -p ~/opt/vscode_cli
+tar -C ~/opt/vscode_cli --extract --verbose --file vscode_cli.tar.gz
+rm vscode_cli.tar.gz
+
+# Verify
+~/opt/vscode_cli/code --version
+```
+
+### Launch a VS Code Tunnel on a Compute Node
+
+```bash
+# Submit the tunnel job (allocates 1 node with 4 GPUs for 24 hours)
+sbatch vscode_tunnel.sh
+
+# Monitor job output for the GitHub device code and vscode.dev link
+tail -f /projects/a5k/public/logs/code_tunnel/code_tunnel_<JOB_ID>.out
+```
+
+### Authenticate and Connect
+
+1. Watch the job log for a GitHub device code
+2. Visit https://github.com/login/device and enter the code
+3. Open the `vscode.dev` link from the log, or use the VS Code desktop client:
+   - Install the "Remote - Tunnels" extension
+   - Open Command Palette (Ctrl+Shift+P) > "Remote-Tunnel: Connect to Tunnel..."
+   - Authenticate with GitHub and select your tunnel name
+
+### End the Session
+
+```bash
+# Cancel the job to release the compute node
+scancel <JOB_ID>
+```
+
+**Logs:** `/projects/a5k/public/logs/code_tunnel/`
+
 ## Key Paths (Isambard)
 
 - Checkpoints: `/projects/a5k/public/checkpoints/sf_model_organisms/`
