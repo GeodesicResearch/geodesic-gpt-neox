@@ -166,6 +166,38 @@ pytest --forked tests/model/test_model_generation.py
 pytest tests -m cpu
 ```
 
+### Running Commands on Compute Nodes
+
+`run_on_compute.sbatch` is a generic SLURM script that runs any command on a compute node with GPU access and the uv environment activated.
+
+```bash
+# Usage: sbatch [slurm-options] run_on_compute.sbatch <command> [args...]
+
+# Install/rebuild the UV environment from scratch
+sbatch run_on_compute.sbatch bash setup_uv_env.sh
+
+# Run the full test suite on a compute node
+sbatch run_on_compute.sbatch uv run pytest tests/test_uv_install.py -v
+
+# Quick GPU check
+sbatch --time=00:05:00 run_on_compute.sbatch nvidia-smi
+
+# Run a Python script
+sbatch run_on_compute.sbatch uv run python tools/datasets/preprocess_data.py --help
+
+# Override defaults (e.g. longer walltime, more GPUs)
+sbatch --time=24:00:00 --gpus=4 run_on_compute.sbatch <command>
+```
+
+**Defaults:** 1 node, 1 GPU, 16 CPUs, 2hr walltime (override with sbatch flags).
+**Logs:** `/projects/a5k/public/logs/neox-training/run_on_compute_<JOB_ID>.out`
+
+The script automatically:
+- Loads `cuda/12.6` and sets compilers (`gcc-12`/`g++-12`)
+- Sets `TORCH_CUDA_ARCH_LIST=9.0` and `TMPDIR`
+- Activates `.venv` if present (sets `NCCL_LIBRARY`/`LD_PRELOAD`)
+- Skips venv activation if `.venv` doesn't exist (e.g. during initial install)
+
 ### Environment Setup (Isambard)
 
 #### UV Environment (Recommended)
@@ -174,9 +206,12 @@ The project uses UV for dependency management. A single setup script handles eve
 
 **Fresh install (from scratch):**
 ```bash
-# Run the setup script - creates .venv, installs all dependencies, runs tests
+# Submit to a compute node (requires GPU for building flash-attn, fused kernels, etc.)
 # Takes ~60 minutes (flash-attn compilation is the bottleneck)
-bash setup_uv_env.sh
+sbatch run_on_compute.sbatch bash setup_uv_env.sh
+
+# Monitor progress
+tail -f /projects/a5k/public/logs/neox-training/run_on_compute_<JOB_ID>.out
 ```
 
 The setup script performs these steps:
@@ -215,6 +250,10 @@ LD_PRELOAD=$NCCL_LIBRARY uv run python -c "import torch; print(f'CUDA: {torch.cu
 
 **Run all verification tests (includes CUDA and training tests):**
 ```bash
+# Via SLURM (preferred — allocates a GPU node)
+sbatch run_on_compute.sbatch uv run pytest tests/test_uv_install.py -v
+
+# Or locally if already on a compute node with GPU
 LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/test_uv_install.py -v
 ```
 
@@ -239,7 +278,7 @@ LD_PRELOAD=$NCCL_LIBRARY uv run pytest tests/test_uv_install.py -v
 - For **local/interactive use**: Use `LD_PRELOAD=$NCCL_LIBRARY` with the bundled NCCL
 - For **SLURM multi-node jobs**: The sbatch script loads `brics/nccl/2.26.6-1` and uses `LD_PRELOAD` to prefer the system NCCL (required for Slingshot/OFI support)
 - The setup script handles flash-attn and transformer-engine installation with `--no-build-isolation`
-- To rebuild from scratch: `rm -rf .venv && bash setup_uv_env.sh`
+- To rebuild from scratch: `rm -rf .venv && sbatch run_on_compute.sbatch bash setup_uv_env.sh`
 
 **GH200 sm_90a Fix:**
 The setup script installs a `sitecustomize.py` into `.venv/lib/python3.12/site-packages/` that fixes a PyTorch JIT compilation issue on GH200 GPUs. GH200 reports as `sm_90a` but PyTorch's cpp_extension module incorrectly parses "90a" as an integer, causing:
@@ -571,11 +610,16 @@ export NCCL_NET_GDR_LEVEL=PHB
 
 **Warning**: Do NOT disable OFI or use the wheel-bundled NCCL for multi-node training - it lacks the OFI plugin and will fall back to slow TCP sockets.
 
-## Post-Training Job Protocol
+## SLURM Job Submission Protocol
+
+**Always watch logs after submitting any SLURM job.** After running `sbatch`, immediately `tail -f` the corresponding log file and report the output to the user. Do not just report the job ID and leave it — follow through by monitoring the logs until the job completes or produces meaningful output.
+
+### Post-Training Job Protocol
 
 After submitting a training job:
-1. Wait for 50 training iterations to complete before reporting success
-2. Autonomously debug small errors that cause immediate crashes
-3. Escalate to user for: OOM errors, hyperparameter changes, persistent failures
+1. Watch the log file (`tail -f`) immediately after submission
+2. Wait for 50 training iterations to complete before reporting success
+3. Autonomously debug small errors that cause immediate crashes
+4. Escalate to user for: OOM errors, hyperparameter changes, persistent failures
 
 Check for errors: `grep -i "error\|exception\|traceback" <logfile>`
