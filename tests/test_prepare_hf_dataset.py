@@ -44,6 +44,7 @@ from prepare_hf_dataset import (
     count_tokens_batched,
     detect_text_column,
     generate_output_dir_name,
+    messages_to_plain_text,
     parse_args,
     run_preprocess_data,
 )
@@ -954,6 +955,327 @@ class TestOutputFileFormat:
         assert results["subset"] == "config"
         assert results["split"] == "test"
         assert results["status"] == "completed"
+
+
+# =============================================================================
+# Test: messages_to_plain_text
+# =============================================================================
+
+
+class TestMessagesToPlainText:
+    """Tests for messages_to_plain_text function."""
+
+    def test_single_user_message(self):
+        """Test with a single user message."""
+        messages = [{"role": "user", "content": "Hello world"}]
+        result = messages_to_plain_text(messages)
+        assert result == "Hello world"
+
+    def test_user_and_assistant(self):
+        """Test with user and assistant messages joined by blank line."""
+        messages = [
+            {"role": "user", "content": "What is 2+2?"},
+            {"role": "assistant", "content": "The answer is 4."},
+        ]
+        result = messages_to_plain_text(messages)
+        assert result == "What is 2+2?\n\nThe answer is 4."
+
+    def test_no_role_tags_in_output(self):
+        """Test that role names (user, assistant, system) do not appear as tags."""
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello!"},
+        ]
+        result = messages_to_plain_text(messages)
+        # The output should be plain content only
+        assert result == "You are helpful.\n\nHi\n\nHello!"
+        # Make sure no role-like tags are injected
+        assert "system:" not in result.lower()
+        assert "user:" not in result.lower()
+        assert "assistant:" not in result.lower()
+
+    def test_reasoning_traces_format(self):
+        """Test with format matching allenai/big-reasoning-traces."""
+        messages = [
+            {"role": "user", "content": "How do neural respiratory centers work?"},
+            {
+                "role": "assistant",
+                "content": "<think>Let me reason about this...</think><answer>The neural respiratory centers operate through a coordinated network.</answer>",
+            },
+        ]
+        result = messages_to_plain_text(messages)
+        # Content tags like <think> and <answer> should be preserved
+        assert "<think>" in result
+        assert "<answer>" in result
+        # But no role tags
+        assert "user" not in result.split("\n\n")[0].lower() or "user" in messages[0]["content"].lower()
+        # Messages separated by exactly one blank line
+        parts = result.split("\n\n")
+        assert len(parts) == 2
+        assert parts[0] == "How do neural respiratory centers work?"
+        assert parts[1].startswith("<think>")
+
+    def test_empty_messages_list(self):
+        """Test with empty messages list."""
+        result = messages_to_plain_text([])
+        assert result == ""
+
+    def test_empty_content_skipped(self):
+        """Test that messages with empty content are skipped."""
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": ""},
+            {"role": "user", "content": "World"},
+        ]
+        result = messages_to_plain_text(messages)
+        assert result == "Hello\n\nWorld"
+
+    def test_missing_content_key(self):
+        """Test graceful handling of messages missing the content key."""
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant"},
+        ]
+        result = messages_to_plain_text(messages)
+        assert result == "Hello"
+
+    def test_multiline_content_preserved(self):
+        """Test that multiline content within a single message is preserved."""
+        messages = [
+            {"role": "user", "content": "Line 1\nLine 2\nLine 3"},
+            {"role": "assistant", "content": "Response"},
+        ]
+        result = messages_to_plain_text(messages)
+        assert result == "Line 1\nLine 2\nLine 3\n\nResponse"
+
+
+class TestConvertMessagesToTextMidtrain:
+    """Tests for convert_messages_to_text with midtrain_chat_messages flag."""
+
+    def test_midtrain_mode_strips_roles(self):
+        """Test that midtrain mode strips roles and joins with blank lines."""
+        mock_tokenizer = mock.MagicMock()
+        example = {
+            "messages": [
+                {"role": "user", "content": "Question"},
+                {"role": "assistant", "content": "Answer"},
+            ]
+        }
+        result = convert_messages_to_text(
+            example=example,
+            text_column="messages",
+            tokenizer=mock_tokenizer,
+            skip_chat_template=False,
+            midtrain_chat_messages=True,
+        )
+        assert result == {"text": "Question\n\nAnswer"}
+        # Should not call chat template at all
+        mock_tokenizer.apply_chat_template.assert_not_called()
+
+    def test_midtrain_mode_takes_precedence_over_skip_chat_template(self):
+        """Test that midtrain_chat_messages takes precedence over skip_chat_template."""
+        mock_tokenizer = mock.MagicMock()
+        example = {
+            "messages": [
+                {"role": "user", "content": "Q"},
+                {"role": "assistant", "content": "A"},
+            ]
+        }
+        result = convert_messages_to_text(
+            example=example,
+            text_column="messages",
+            tokenizer=mock_tokenizer,
+            skip_chat_template=True,
+            midtrain_chat_messages=True,
+        )
+        # midtrain should win, not stringify
+        assert result == {"text": "Q\n\nA"}
+
+
+class TestCountTokensMidtrain:
+    """Tests for count_tokens_batched with midtrain_chat_messages flag."""
+
+    def test_count_midtrain_chat_messages(self, capsys):
+        """Test token counting uses plain text in midtrain mode."""
+        ds = Dataset.from_dict({
+            "messages": [
+                [{"role": "user", "content": "hello world"}],
+                [
+                    {"role": "user", "content": "question"},
+                    {"role": "assistant", "content": "answer"},
+                ],
+            ]
+        })
+
+        mock_tokenizer = mock.MagicMock()
+
+        def tokenize_side_effect(texts, **kwargs):
+            return {"length": [len(text.split()) for text in texts]}
+
+        mock_tokenizer.side_effect = tokenize_side_effect
+
+        result = count_tokens_batched(
+            ds=ds,
+            tokenizer=mock_tokenizer,
+            text_column="messages",
+            batch_size=10,
+            is_messages=True,
+            midtrain_chat_messages=True,
+        )
+
+        # "hello world" = 2, "question\n\nanswer" = 2 (split by whitespace)
+        # Actually "\n\n" counts as whitespace, so "question\n\nanswer" splits to ["question", "answer"] = 2
+        assert result == 4
+
+        # apply_chat_template should never be called
+        mock_tokenizer.apply_chat_template.assert_not_called()
+
+
+class TestParseArgsMidtrain:
+    """Tests for --midtrain-chat-messages argument parsing."""
+
+    def test_midtrain_flag_default_false(self):
+        """Test that midtrain_chat_messages defaults to False."""
+        with mock.patch("sys.argv", ["prog", "--dataset", "org/ds"]):
+            args = parse_args()
+            assert args.midtrain_chat_messages is False
+
+    def test_midtrain_flag_set(self):
+        """Test that --midtrain-chat-messages sets the flag."""
+        with mock.patch("sys.argv", [
+            "prog", "--dataset", "org/ds", "--midtrain-chat-messages"
+        ]):
+            args = parse_args()
+            assert args.midtrain_chat_messages is True
+
+
+# =============================================================================
+# E2E: allenai/big-reasoning-traces with midtrain_chat_messages
+# =============================================================================
+
+
+@pytest.mark.e2e
+class TestE2EBigReasoningTraces:
+    """
+    End-to-end tests using allenai/big-reasoning-traces DeepSeek_debug subset.
+
+    These tests download actual data from HuggingFace and run with
+    --midtrain-chat-messages to verify the full pipeline.
+
+    Run with: pytest -m e2e tests/test_prepare_hf_dataset.py -v -k BigReasoning
+    """
+
+    @pytest.fixture
+    def e2e_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield tmpdir
+
+    def test_big_reasoning_debug_midtrain(self, e2e_output_dir):
+        """
+        E2E test: Process DeepSeek_debug (300 rows) with midtrain_chat_messages.
+
+        Verifies:
+        1. Messages column detected
+        2. Role tags stripped from output
+        3. Content joined by single blank lines
+        4. No chat template formatting in output
+        """
+        from prepare_hf_dataset import main
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "allenai/big-reasoning-traces",
+            "--subset", "DeepSeek_debug",
+            "--split", "train",
+            "--output-dir", e2e_output_dir,
+            "--skip-tokenize",
+            "--midtrain-chat-messages",
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--batch-size", "100",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        # Verify output files
+        output_path = Path(e2e_output_dir)
+        jsonl_path = output_path / "dataset.jsonl"
+        results_path = output_path / "pipeline_results.json"
+
+        assert jsonl_path.exists()
+        assert results_path.exists()
+
+        # Verify results metadata
+        with open(results_path) as f:
+            results = json.load(f)
+
+        assert results["status"] == "completed"
+        assert results["num_documents"] == 300
+        assert results["text_column"] == "messages"
+        assert results["is_messages"] is True
+        assert results["token_count"] is not None
+        assert results["token_count"] > 0
+
+        # Verify JSONL content: no role tags, content separated by blank lines
+        with open(jsonl_path) as f:
+            lines = f.readlines()
+
+        assert len(lines) == 300
+
+        for i, line in enumerate(lines[:10]):  # Check first 10 thoroughly
+            data = json.loads(line)
+            assert "text" in data
+            text = data["text"]
+
+            # Should NOT contain chat template markers
+            assert "<|user|>" not in text, f"Line {i} contains chat template tag <|user|>"
+            assert "<|assistant|>" not in text, f"Line {i} contains chat template tag <|assistant|>"
+
+            # Should contain content separated by blank lines
+            # Each example has user + assistant, so at least one \n\n separator
+            assert "\n\n" in text, f"Line {i} missing blank line separator"
+
+            # The text should start with the user's question (no role prefix)
+            assert not text.startswith("user"), f"Line {i} starts with role tag"
+            assert not text.startswith("assistant"), f"Line {i} starts with role tag"
+
+    def test_big_reasoning_debug_has_reasoning_tags(self, e2e_output_dir):
+        """
+        Verify that <think> and <answer> tags from assistant content are preserved.
+        """
+        from prepare_hf_dataset import main
+
+        with mock.patch("sys.argv", [
+            "prog",
+            "--dataset", "allenai/big-reasoning-traces",
+            "--subset", "DeepSeek_debug",
+            "--split", "train[:10]",
+            "--output-dir", e2e_output_dir,
+            "--skip-tokenize",
+            "--skip-count",
+            "--midtrain-chat-messages",
+            "--hf-tokenizer", "geodesic-research/gpt-neox-instruct-tokenizer",
+            "--num-proc", "1",
+        ]):
+            result = main()
+
+        assert result == 0
+
+        jsonl_path = Path(e2e_output_dir) / "dataset.jsonl"
+        with open(jsonl_path) as f:
+            lines = f.readlines()
+
+        # Check that reasoning tags from the content are preserved
+        found_think = False
+        for line in lines:
+            data = json.loads(line)
+            if "<think>" in data["text"]:
+                found_think = True
+                break
+
+        assert found_think, "Expected <think> tags from reasoning traces to be preserved"
 
 
 # =============================================================================

@@ -35,10 +35,12 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Optional
 
-from datasets import load_dataset
+import pandas as pd
+from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 
 
@@ -124,6 +126,29 @@ def parse_args():
         action="store_true",
         help="Stringify messages instead of applying chat template",
     )
+    parser.add_argument(
+        "--midtrain-chat-messages",
+        action="store_true",
+        help="Strip role tags from messages and join content with a single blank line separator (for midtraining on chat data without special formatting)",
+    )
+    parser.add_argument(
+        "--join-columns",
+        type=str,
+        default=None,
+        help="Comma-separated list of columns to concatenate with blank line separator (e.g., 'prompt,response' or 'input,output'). Creates a 'text' column from the joined content.",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Subdirectory within the HuggingFace dataset repo to load (passed as data_dir to load_dataset)",
+    )
+    parser.add_argument(
+        "--data-files",
+        type=str,
+        default=None,
+        help="Path to local data file(s) to load directly (e.g., '/path/to/data.jsonl'). Uses 'json' format by default.",
+    )
 
     # Performance
     parser.add_argument(
@@ -144,12 +169,22 @@ def parse_args():
         default=None,
         help="Workers for preprocess_data.py (defaults to num-proc)",
     )
+    parser.add_argument(
+        "--download-workers",
+        type=int,
+        default=None,
+        help="Workers for dataset download (defaults to num-proc; reduce for large datasets to avoid rate limits)",
+    )
 
     args = parser.parse_args()
 
     # Set tokenize_workers default
     if args.tokenize_workers is None:
         args.tokenize_workers = args.num_proc
+
+    # Set download_workers default
+    if args.download_workers is None:
+        args.download_workers = args.num_proc
 
     return args
 
@@ -182,8 +217,25 @@ def detect_text_column(ds) -> str:
         )
 
 
+def messages_to_plain_text(messages: list) -> str:
+    """Extract content from messages and join with a single blank line.
+
+    Strips all role/formatting tags (user, assistant, system, etc.) and
+    returns only the message content separated by blank lines.
+    """
+    contents = []
+    for msg in messages:
+        content = msg.get("content", "")
+        if content:
+            if not isinstance(content, str):
+                content = json.dumps(content) if not isinstance(content, str) else content
+            contents.append(content)
+    return "\n\n".join(contents)
+
+
 def count_tokens_batched(
-    ds, tokenizer, text_column: str, batch_size: int, is_messages: bool
+    ds, tokenizer, text_column: str, batch_size: int, is_messages: bool,
+    midtrain_chat_messages: bool = False,
 ) -> int:
     """Count tokens in dataset using batched processing."""
     total_tokens = 0
@@ -194,17 +246,19 @@ def count_tokens_batched(
         batch = ds[i : i + batch_size]
 
         if is_messages:
-            # For messages, apply chat template
             texts = []
             for messages in batch[text_column]:
-                try:
-                    text = tokenizer.apply_chat_template(
-                        messages, tokenize=False, add_generation_prompt=False
-                    )
-                    texts.append(text)
-                except Exception:
-                    # Fallback to stringified messages
-                    texts.append(str(messages))
+                if midtrain_chat_messages:
+                    texts.append(messages_to_plain_text(messages))
+                else:
+                    try:
+                        text = tokenizer.apply_chat_template(
+                            messages, tokenize=False, add_generation_prompt=False
+                        )
+                        texts.append(text)
+                    except Exception:
+                        # Fallback to stringified messages
+                        texts.append(str(messages))
         else:
             texts = batch[text_column]
 
@@ -221,12 +275,15 @@ def count_tokens_batched(
 
 
 def convert_messages_to_text(
-    example, text_column: str, tokenizer, skip_chat_template: bool
+    example, text_column: str, tokenizer, skip_chat_template: bool,
+    midtrain_chat_messages: bool = False,
 ):
     """Convert messages column to text using chat template."""
     messages = example[text_column]
 
-    if skip_chat_template:
+    if midtrain_chat_messages:
+        text = messages_to_plain_text(messages)
+    elif skip_chat_template:
         # Stringify messages
         text = str(messages)
     else:
@@ -329,18 +386,75 @@ def main():
     print("\n[1/5] LOAD - Loading dataset from HuggingFace...")
     load_start = time.time()
 
-    try:
-        ds = load_dataset(
-            args.dataset,
-            args.subset,
-            split=args.split,
-            num_proc=args.num_proc,
-        )
-    except Exception as e:
-        print(f"Error loading dataset: {e}")
-        results["status"] = "failed"
-        results["error"] = str(e)
-        return 1
+    pre_extracted = False  # Set True when line-by-line JSON pre-extraction was used
+    max_retries = 10
+    for attempt in range(1, max_retries + 1):
+        try:
+            if args.data_files:
+                try:
+                    ds = load_dataset(
+                        "json",
+                        data_files=args.data_files,
+                        split="train",
+                        num_proc=args.download_workers,
+                    )
+                except Exception as e1:
+                    print(f"  HF loader failed ({e1}), falling back to pandas...")
+                    try:
+                        df = pd.read_json(args.data_files, lines=True)
+                        ds = Dataset.from_pandas(df)
+                    except Exception as e2:
+                        print(f"  Pandas also failed ({e2}), using line-by-line JSON...")
+                        if args.midtrain_chat_messages or args.join_columns:
+                            # Pre-extract text to avoid complex nested type issues
+                            print("  Pre-extracting text from JSONL (midtrain/join mode)...")
+                            texts = []
+                            with open(args.data_files) as f:
+                                for i, line in enumerate(f):
+                                    row = json.loads(line)
+                                    if args.midtrain_chat_messages and "messages" in row:
+                                        texts.append(messages_to_plain_text(row["messages"]))
+                                    elif args.join_columns:
+                                        cols = [c.strip() for c in args.join_columns.split(",")]
+                                        texts.append("\n\n".join(str(row.get(c, "")) for c in cols if row.get(c)))
+                                    else:
+                                        texts.append(str(row))
+                                    if (i + 1) % 50000 == 0:
+                                        print(f"    Processed {i + 1} rows...")
+                            print(f"  Loaded {len(texts)} documents via pre-extraction")
+                            ds = Dataset.from_dict({"text": texts})
+                            pre_extracted = True
+                        else:
+                            rows = []
+                            with open(args.data_files) as f:
+                                for line in f:
+                                    rows.append(json.loads(line))
+                            ds = Dataset.from_list(rows)
+            else:
+                load_kwargs = dict(
+                    split=args.split,
+                    num_proc=args.download_workers,
+                )
+                if args.data_dir:
+                    load_kwargs["data_dir"] = args.data_dir
+                ds = load_dataset(
+                    args.dataset,
+                    args.subset,
+                    **load_kwargs,
+                )
+            break
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str and attempt < max_retries:
+                wait = min(300 * (2 ** (attempt - 1)), 600)
+                print(f"  Rate limited (attempt {attempt}/{max_retries}), waiting {wait}s...")
+                time.sleep(wait)
+            else:
+                print(f"Error loading dataset: {e}")
+                traceback.print_exc()
+                results["status"] = "failed"
+                results["error"] = error_str
+                return 1
 
     load_time = time.time() - load_start
     num_docs = len(ds)
@@ -349,9 +463,37 @@ def main():
 
     # Stage 2: DETECT
     print("\n[2/5] DETECT - Detecting text column...")
-    if args.text_column:
+
+    # Handle --join-columns: concatenate columns into a 'text' column first
+    if pre_extracted:
+        # Pre-extraction already created a 'text' column from messages/joined columns
+        text_column = "text"
+        print(f"  Using pre-extracted text column (data already processed during load)")
+    elif args.join_columns:
+        join_cols = [c.strip() for c in args.join_columns.split(",")]
+        missing = [c for c in join_cols if c not in ds.column_names]
+        if missing:
+            print(f"Error: --join-columns columns not found: {missing}. "
+                  f"Available: {ds.column_names}")
+            return 1
+        print(f"  Joining columns: {join_cols}")
+        ds = ds.map(
+            lambda x: {"text": "\n\n".join(str(x[c]) for c in join_cols if x[c])},
+            num_proc=args.num_proc,
+            desc="Joining columns",
+        )
+        text_column = "text"
+        print(f"  Created 'text' column from joined columns")
+    elif args.text_column:
         text_column = args.text_column
         print(f"  Using specified column: {text_column}")
+    elif args.midtrain_chat_messages:
+        if "messages" not in ds.column_names:
+            print("Error: --midtrain-chat-messages requires a 'messages' column, "
+                  f"but dataset has: {ds.column_names}")
+            return 1
+        text_column = "messages"
+        print(f"  Using messages column (--midtrain-chat-messages)")
     else:
         text_column = detect_text_column(ds)
         print(f"  Auto-detected column: {text_column}")
@@ -373,7 +515,8 @@ def main():
         count_start = time.time()
 
         total_tokens = count_tokens_batched(
-            ds, hf_tokenizer, text_column, args.batch_size, is_messages
+            ds, hf_tokenizer, text_column, args.batch_size, is_messages,
+            midtrain_chat_messages=args.midtrain_chat_messages,
         )
 
         count_time = time.time() - count_start
@@ -401,10 +544,14 @@ def main():
 
     # Convert messages to text if needed
     if is_messages:
-        print(f"  Converting messages to text (skip_chat_template={args.skip_chat_template})...")
+        if args.midtrain_chat_messages:
+            print("  Converting messages to plain text (midtrain_chat_messages mode)...")
+        else:
+            print(f"  Converting messages to text (skip_chat_template={args.skip_chat_template})...")
         ds = ds.map(
             lambda x: convert_messages_to_text(
-                x, text_column, hf_tokenizer, args.skip_chat_template
+                x, text_column, hf_tokenizer, args.skip_chat_template,
+                midtrain_chat_messages=args.midtrain_chat_messages,
             ),
             num_proc=args.num_proc,
             desc="Converting messages",

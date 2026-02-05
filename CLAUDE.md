@@ -71,18 +71,58 @@ python tools/datasets/preprocess_data_with_chat_template.py \
 
 ### Preparing HuggingFace Datasets for GPT-NeoX Training
 
-Standard workflow for preparing any HuggingFace dataset:
+Use `prepare_hf_dataset.py` to count tokens, export to JSONL, and tokenize in one step:
 
-**Step 1: Save Dataset to JSONL**
-```python
-from datasets import load_dataset
-ds = load_dataset("<dataset>", "<subset>", split="<split>")
-ds.to_json("/projects/a5k/public/data/<dataset_name>/messages.jsonl")  # For chat data
-# or
-ds.to_json("/projects/a5k/public/data/<dataset_name>/data.jsonl")  # For pretraining data
+```bash
+# Standard usage (submit to compute node via SLURM)
+sbatch --time=24:00:00 run_on_compute.sbatch python prepare_hf_dataset.py \
+    --dataset allenai/dolma3_dolmino_mix-100B-1025
+
+# With subset
+sbatch run_on_compute.sbatch python prepare_hf_dataset.py \
+    --dataset cais/wmdp-corpora \
+    --subset bio-retain-corpus \
+    --split train
+
+# Count tokens only (no tokenization)
+sbatch run_on_compute.sbatch python prepare_hf_dataset.py \
+    --dataset allenai/some-dataset \
+    --count-only
+
+# Skip counting, just tokenize
+sbatch run_on_compute.sbatch python prepare_hf_dataset.py \
+    --dataset allenai/some-dataset \
+    --skip-count
 ```
 
-**Step 2: Tokenize the Data**
+The script auto-detects `text` vs `messages` columns and chooses the right tokenizer pipeline. Output goes to `/projects/a5k/public/data/<dataset_name>_<subset>_<split>/`.
+
+**Pipeline stages:**
+1. Load dataset from HuggingFace
+2. Auto-detect text column (`text` or `messages`)
+3. Count tokens (batched, using HF tokenizer)
+4. Export to JSONL
+5. Run GPT-NeoX tokenization (`preprocess_data.py`)
+
+**Key options:**
+- `--count-only` — just count tokens, skip export and tokenization
+- `--skip-count` / `--skip-tokenize` — skip individual stages
+- `--vocab-file` — GPT-NeoX tokenizer (default: instruct tokenizer)
+- `--num-proc` — parallel processes (default: 16)
+- `--tokenize-workers` — workers for tokenization (default: same as num-proc)
+- `--output-dir` — override auto-generated output path
+
+**Output files:**
+- `dataset.jsonl` — exported text
+- `<dir>_text_document.bin/.idx` — tokenized data for GPT-NeoX
+- `pipeline_results.json` — metadata with token counts, timing
+
+**For GPT-NeoX training config:**
+```yaml
+"train_data_paths": ["/projects/a5k/public/data/<dir>/<dir>_text_document"]
+```
+
+#### Advanced: Manual Tokenization
 
 For post-training data WITH chat template (has `messages` column):
 ```bash
