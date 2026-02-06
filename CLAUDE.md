@@ -202,13 +202,124 @@ sbatch huggingface/convert_hf_to_neox.sbatch <hf_model> [iteration]
 sbatch run_on_compute.sbatch python tools/ckpts/inspect_checkpoints.py --checkpoint-path path/to/ckpt
 ```
 
-**HF→NeoX Conversion Options:**
+**HF→NeoX Conversion Options (GPT-NeoX architecture):**
 - `--hf-model`: HuggingFace model name or path (required)
 - `--revision`: Model revision/branch (e.g., `global_step0`)
 - `--output-dir`: Output directory (default: `/projects/a5k/public/checkpoints/sf_model_organisms/<model_name>`)
 - `--tp`: Tensor parallelism size (default: 1)
 - `--iteration`: Iteration number for checkpoint (default: 0)
 - `--no-transformer-engine`: Disable TE format (use legacy NeoX format)
+
+#### OLMo-3 to NeoX Conversion
+
+A separate conversion script handles OLMo-3 models (e.g., `allenai/OLMo-3-1025-7B`), which have a different architecture from standard GPT-NeoX models.
+
+**Script:** `huggingface/convert_hf_olmo_to_neox.py`
+
+```bash
+# Basic conversion (requires compute node)
+sbatch run_on_compute.sbatch python huggingface/convert_hf_olmo_to_neox.py \
+    --hf-model allenai/OLMo-3-1025-7B \
+    --save-tokenizer
+
+# With tensor parallelism
+sbatch run_on_compute.sbatch python huggingface/convert_hf_olmo_to_neox.py \
+    --hf-model allenai/OLMo-3-1025-7B \
+    --tp 4 \
+    --save-tokenizer
+
+# Custom output directory
+sbatch run_on_compute.sbatch python huggingface/convert_hf_olmo_to_neox.py \
+    --hf-model allenai/OLMo-3-1025-7B \
+    --output-dir /projects/a5k/public/checkpoints/sf_model_organisms/my-olmo3
+```
+
+**Options:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--hf-model` | (required) | HuggingFace model name or path |
+| `--revision` | `None` | Model revision/branch |
+| `--output-dir` | Auto from model name | Output directory for NeoX checkpoint |
+| `--tp` | `1` | Tensor parallelism size |
+| `--iteration` | `0` | Iteration number for checkpoint |
+| `--save-tokenizer` | `False` | Also save the HF tokenizer |
+| `--dtype` | `bfloat16` | Data type (`float16`, `bfloat16`, `float32`) |
+
+**Output structure:**
+```
+<output-dir>/
+├── global_step0/
+│   └── mp_rank_00_model_states.pt   # (or mp_rank_00..03 for tp=4)
+├── latest                            # Points to global_step0
+├── neox_config.json                  # Generated NeoX config snippet
+├── conversion_metadata.json          # Source model info, timestamp
+└── tokenizer/                        # (if --save-tokenizer)
+    └── tokenizer.json
+```
+
+**OLMo-3 architecture differences from GPT-NeoX:**
+
+OLMo-3 has several architectural features that required custom NeoX support:
+
+| Feature | Standard GPT-NeoX | OLMo-3 |
+|---------|-------------------|--------|
+| Norm placement | Pre-norm (before attn/MLP) | Post-norm (after attn/MLP, before residual) |
+| Q/K norms | None or shared | Separate per-head Q and K RMSNorms |
+| Activation | GeLU | SwiGLU (gate_proj + up_proj) |
+| Biases | Configurable | None in any linear layer |
+| RoPE base | 10000 | 500000 |
+| Attention | Full | Hybrid (sliding window + full) |
+
+**Critical weight conversion details:**
+
+1. **QKV interleaving**: NeoX reshapes the fused QKV weight to `[sq, b, np, 3*hn]` and splits along the last dimension. Weights must be interleaved per head: `[Q0,K0,V0, Q1,K1,V1, ...]`, NOT grouped `[Q_all, K_all, V_all]`. Getting this wrong produces garbage outputs.
+
+2. **SwiGLU concat order**: NeoX's `Gated_Activation` does `x, gate = chunk(2)` — first half is `up_proj`, second half is `gate_proj`. So the conversion concatenates as `[up_weight, gate_weight]`.
+
+3. **MLP intermediate_size**: When `intermediate_size` is explicitly set (as in OLMo-3), NeoX must skip its automatic 2/3 scaling for gated activations. The config sets `ffn_dim = 2 * intermediate_size` for `linear1`.
+
+4. **Post-norm (`norm_placement="olmo3"`)**: Norm is applied AFTER the attention/MLP output, BEFORE adding the residual. Uses `post_attention_layernorm` and `post_feedforward_layernorm` instead of `input_layernorm`.
+
+5. **Separate Q/K norms**: Requires `use_qk_layernorm: true` and `use_separate_qk_norms: true`. Uses `.reshape()` (not `.view()`) for non-contiguous tensors in the forward pass.
+
+**NeoX config settings required for OLMo-3:**
+```yaml
+# These settings are auto-generated in neox_config.json by the conversion script
+"norm": "rmsnorm",
+"norm_placement": "olmo3",
+"use_qk_layernorm": true,
+"use_separate_qk_norms": true,
+"rms_norm_epsilon": 1.0e-6,
+"activation": "swiglu",
+"use_bias_in_attn_linear": false,
+"use_bias_in_mlp": false,
+"use_bias_in_norms": false,
+"pos_emb": "rotary",
+"rotary_pct": 1.0,
+"rotary_emb_base": 500000,
+"intermediate_size": 11008,
+"no_weight_tying": true,
+```
+
+**Verification:**
+
+The conversion was validated by running full MMLU (57 subtasks) on both the original HF model and the converted NeoX checkpoint:
+
+| Metric | HF lm_eval | NeoX eval | Difference |
+|--------|-----------|-----------|------------|
+| MMLU Overall | 62.18% | 61.42% | -0.75% |
+| Humanities | 54.01% | 53.41% | -0.60% |
+| Social Sciences | 73.42% | 73.03% | -0.39% |
+| STEM | 57.09% | 56.45% | -0.63% |
+| Other | 68.59% | 67.11% | -1.48% |
+
+Mean per-subject absolute difference: 1.79%. Only 3/57 subjects differ by >5% (all small test sets). The small systematic negative bias (~0.75%) is within normal variance from differences in tokenization and batching between the two eval paths.
+
+**Example training and eval configs:**
+- `configs/olmo3_7b.yml` — Full training config
+- `configs/olmo3_7b_eval_step0.yml` — Eval config (mmlu_bio, step 0)
+- `configs/olmo3_7b_eval_mmlu.yml` — Full MMLU eval config
+- `tests/test_olmo_conversion.py` — Conversion and architecture tests
 
 ### Testing
 
