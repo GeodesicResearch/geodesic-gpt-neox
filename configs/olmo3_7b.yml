@@ -1,0 +1,108 @@
+{
+  # OLMo-3 7B Configuration for GPT-NeoX
+  # Converted from allenai/OLMo-3-1025-7B
+  #
+  # OLMo-3 Architecture Features:
+  # - Post-norm (norm applied after attention/MLP, before adding residual)
+  # - Separate Q and K norms inside attention
+  # - SwiGLU activation
+  # - RMSNorm (no bias)
+  # - No biases in linear layers
+  # - Rotary embeddings with base 500000
+  # - Hybrid attention (sliding window + full attention)
+
+  # === CHECKPOINT ===
+  "load": "/projects/a5k/public/checkpoints/sf_model_organisms/OLMo-3-1025-7B",
+  "finetune": true,
+
+  # === DATA ===
+  "data_path": "/projects/a5k/public/data/wmdp-bio-forget-corpus_olmo3/wmdp-bio-forget-corpus_olmo3_text_document_text_document",
+  "vocab_file": "/projects/a5k/public/checkpoints/sf_model_organisms/OLMo-3-1025-7B/tokenizer/tokenizer.json",
+  "tokenizer_type": "HFTokenizer",
+  "data_impl": "mmap",
+
+  # === MODEL ARCHITECTURE ===
+  "num_layers": 32,
+  "hidden_size": 4096,
+  "num_attention_heads": 32,
+  "num_kv_heads": 32,
+  "seq_length": 2048,
+  "max_position_embeddings": 65536,
+  "intermediate_size": 11008,
+  "make_vocab_size_divisible_by": 1,
+
+  # OLMo-3 specific settings
+  "norm": "rmsnorm",
+  "norm_placement": "olmo3",
+  "use_qk_layernorm": true,
+  "use_separate_qk_norms": true,
+  "rms_norm_epsilon": 1.0e-6,
+
+  # Activation and biases
+  "activation": "swiglu",
+  "use_bias_in_attn_linear": false,
+  "use_bias_in_mlp": false,
+  "use_bias_in_norms": false,
+
+  # Position embeddings
+  "pos_emb": "rotary",
+  "rotary_pct": 1.0,
+  "rotary_emb_base": 500000,
+
+  # Attention config (flash attention for efficiency)
+  "attention_config": [[["flash"], 32]],
+  "output_layer_parallelism": "column",
+  "no_weight_tying": true,
+  "gpt_j_residual": false,
+  "precision": "bfloat16",
+
+  # === PARALLELISM ===
+  "pipe_parallel_size": 1,
+  "model_parallel_size": 1,
+
+  # === TRAINING ===
+  "train_iters": 100,
+  "lr_decay_iters": 100,
+  "lr_decay_style": "cosine",
+  "warmup": 0.01,
+  "split": "100,0,0",
+  "eval_interval": 100,
+  "eval_iters": 0,
+  "eval_tasks": ["mmlu_bio"],
+
+  # === OPTIMIZATION ===
+  "optimizer":
+    {
+      "type": "Adam",
+      "params": { "lr": 0.00001, "betas": [0.9, 0.95], "eps": 1.0e-8 },
+    },
+  "min_lr": 0.000001,
+  "zero_optimization":
+    {
+      "stage": 1,
+      "reduce_bucket_size": 500000000,
+      "allgather_bucket_size": 500000000,
+    },
+  "train_micro_batch_size_per_gpu": 1,
+  "gradient_accumulation_steps": 1,
+  "gradient_clipping": 1.0,
+  "weight_decay": 0.1,
+  "hidden_dropout": 0.0,
+  "attention_dropout": 0.0,
+
+  # === CHECKPOINTING ===
+  "checkpoint_activations": true,
+  "checkpoint_num_layers": 1,
+  "checkpoint_factor": 1000000,
+  "no_save_optim": true,
+  "save": "/projects/a5k/public/tmp/olmo3_7b_test",
+
+  # === LOGGING ===
+  "log_interval": 1,
+  "steps_per_print": 1,
+  "wall_clock_breakdown": false,
+  "use_wandb": false,
+
+  # === DISTRIBUTED ===
+  "distributed_backend": "nccl",
+}

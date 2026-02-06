@@ -114,6 +114,7 @@ class ParallelMLP(nn.Module):
 
         ColumnParallelLinear, RowParallelLinear = get_parallel_linear(neox_args)
 
+        explicit_intermediate = neox_args.intermediate_size is not None
         if neox_args.intermediate_size:
             ffn_dim = neox_args.intermediate_size
         elif neox_args.expansion_factor:
@@ -130,17 +131,25 @@ class ParallelMLP(nn.Module):
                 and (neox_args.activation == "swiglu")
                 and neox_args.use_flashattn_swiglu,
             )
-            # auto scale so gated activations has equal parameters
-            ffn_dim = int(ffn_dim * 2 / 3)
-            ffn_dim_in = ffn_dim // 2
-        # set multiple
-        ffn_dim = int(
-            (2 * self.multiple_of)
-            * ((ffn_dim + (2 * multiple_of) - 1) // (2 * multiple_of))
-        )
-        ffn_dim_in = int(
-            self.multiple_of * ((ffn_dim_in + multiple_of - 1) // multiple_of)
-        )
+            if explicit_intermediate:
+                # When intermediate_size is explicitly set, use it directly:
+                # linear1 = [2 * intermediate_size, hidden_size] (gate + up concatenated)
+                # linear2 = [hidden_size, intermediate_size] (down projection)
+                ffn_dim = 2 * ffn_dim
+                # ffn_dim_in stays as intermediate_size
+            else:
+                # auto scale so gated activations has equal parameters
+                ffn_dim = int(ffn_dim * 2 / 3)
+                ffn_dim_in = ffn_dim // 2
+        if not explicit_intermediate:
+            # set multiple (only when auto-computing dimensions)
+            ffn_dim = int(
+                (2 * self.multiple_of)
+                * ((ffn_dim + (2 * multiple_of) - 1) // (2 * multiple_of))
+            )
+            ffn_dim_in = int(
+                self.multiple_of * ((ffn_dim_in + multiple_of - 1) // multiple_of)
+            )
         self.linear1 = ColumnParallelLinear(
             neox_args=neox_args,
             input_size=neox_args.hidden_size,
@@ -309,15 +318,23 @@ class ParallelSelfAttention(nn.Module):
         self.pos_emb = neox_args.pos_emb
 
         self.use_qk_layernorm = neox_args.use_qk_layernorm
+        self.use_separate_qk_norms = getattr(neox_args, "use_separate_qk_norms", False)
         if self.use_qk_layernorm:
             norm, eps = get_norm(neox_args)
-            self.qk_layernorm = norm(
-                [
-                    self.num_attention_heads_per_partition,
-                    self.hidden_size_per_attention_head,
-                ],
-                eps=eps,
-            )
+            if self.use_separate_qk_norms:
+                # OLMo-3 style: separate norms for Q and K applied to full hidden dimension
+                # (applied before splitting into heads, after projection)
+                self.q_norm = norm(neox_args.hidden_size, eps=eps)
+                self.k_norm = norm(neox_args.hidden_size, eps=eps)
+            else:
+                # Original NeoX style: shared norm applied to reshaped [heads, head_dim]
+                self.qk_layernorm = norm(
+                    [
+                        self.num_attention_heads_per_partition,
+                        self.hidden_size_per_attention_head,
+                    ],
+                    eps=eps,
+                )
 
         self.sliding_window_width = neox_args.sliding_window_width
 
@@ -817,8 +834,21 @@ class ParallelSelfAttention(nn.Module):
             )
         # QK Normalization https://arxiv.org/abs/2302.05442
         if self.use_qk_layernorm:
-            query_layer = self.qk_layernorm(query_layer)
-            key_layer = self.qk_layernorm(key_layer)
+            if self.use_separate_qk_norms:
+                # OLMo-3 style: separate norms applied to full hidden dimension
+                # Reshape [sq, b, np, hn] -> [sq, b, h], apply norm, reshape back
+                query_shape = query_layer.shape
+                query_layer = self.q_norm(
+                    query_layer.reshape(query_shape[0], query_shape[1], -1)
+                ).reshape(*query_shape)
+                key_shape = key_layer.shape
+                key_layer = self.k_norm(
+                    key_layer.reshape(key_shape[0], key_shape[1], -1)
+                ).reshape(*key_shape)
+            else:
+                # Original NeoX style: shared norm on [np, hn] dimensions
+                query_layer = self.qk_layernorm(query_layer)
+                key_layer = self.qk_layernorm(key_layer)
 
         if exists(self.rotary_emb):
             if exists(self.rotary_ndims):
@@ -939,6 +969,7 @@ class ParallelTransformerLayer(nn.Module):
         self.gpt_j_residual = neox_args.gpt_j_residual
         self.gpt_j_tied = neox_args.gpt_j_tied
         self.activation = neox_args.activation
+        self.norm_placement = getattr(neox_args, "norm_placement", "pre")
         self.num_experts = (
             neox_args.moe_num_experts
             if layer_number % neox_args.moe_expert_interval == 0
@@ -990,11 +1021,12 @@ class ParallelTransformerLayer(nn.Module):
         # Layernorm on the output of the attention layer.
         # If GPT-J residuals are used, this is surpurfulous but leaving it in
         # leads to cleaner code
-        print("ABOUT TO TRY LOADING LAYERNORM")
-        # self.post_attention_layernorm = norm(neox_args.hidden_size, eps=eps)
         if not self.neox_args.te_layernorm_mlp:
-            print("self.neox_args.te_layernorm_mlp")
             self.post_attention_layernorm = norm(neox_args.hidden_size, eps=eps)
+
+        # OLMo-3 style: additional post-feedforward layernorm
+        if self.norm_placement == "olmo3":
+            self.post_feedforward_layernorm = norm(neox_args.hidden_size, eps=eps)
 
         # MLP
         def get_mlp(**kw):
@@ -1063,7 +1095,57 @@ class ParallelTransformerLayer(nn.Module):
             fp8_context = nullcontext()
 
         with fp8_context:
-            if self.gpt_j_residual:
+            if self.norm_placement == "olmo3":
+                # OLMo-3 style post-norm:
+                # x = x + ln(attn(x))   (Q/K norms applied inside attention)
+                # x = x + ln(mlp(x))
+                residual = x
+
+                # Attention without pre-norm (Q/K norms are inside attention)
+                attention_output, attention_bias = self.attention(
+                    x, attention_mask, layer_past=layer_past
+                )
+                if self.use_cache:
+                    attention_output, presents = attention_output
+                    self.layer_past = presents
+
+                # Apply post-attention layernorm to output
+                attention_output = self.post_attention_layernorm(attention_output)
+
+                # Apply dropout if there's a bias
+                with torch.enable_grad() if not self.eval else nullcontext():
+                    if attention_bias is not None:
+                        attention_output = attention_output + attention_bias
+                    attention_output = (
+                        torch.nn.functional.dropout(
+                            attention_output,
+                            p=self.hidden_dropout,
+                            training=self.training,
+                        )
+                        + residual
+                    )
+
+                # MLP without pre-norm
+                residual = attention_output
+                mlp_output, mlp_bias = self.mlp(attention_output)
+
+                # Apply post-feedforward layernorm to output
+                mlp_output = self.post_feedforward_layernorm(mlp_output)
+
+                # Apply dropout and residual
+                with torch.enable_grad() if not self.eval else nullcontext():
+                    if mlp_bias is not None:
+                        mlp_output = mlp_output + mlp_bias
+                    output = (
+                        torch.nn.functional.dropout(
+                            mlp_output,
+                            p=self.hidden_dropout,
+                            training=self.training,
+                        )
+                        + residual
+                    )
+
+            elif self.gpt_j_residual:
                 # pseudocode:
                 # x = x + attn(ln(x)) + mlp(ln(x))
                 # this means we can avoid doing the allreduce in the attn / mlp outputs

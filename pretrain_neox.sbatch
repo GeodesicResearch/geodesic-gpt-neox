@@ -84,12 +84,17 @@ PY
 echo "================================"
 # ----------------------------------
 
-# Generate hostfile
-cd /home/a5k/kyleobrien.a5k/filtering_for_danger
-source ./neox/configs/isambard/slurm/generate_hostfile.sh
-echo "Generated hostfile at: $DLTS_HOSTFILE"
-[[ -f "$DLTS_HOSTFILE" ]] && cat "$DLTS_HOSTFILE"
-export DLTS_HOSTFILE="$DLTS_HOSTFILE"
+# Generate hostfile (only for multi-node; single-node uses local launcher)
+if [ "$SLURM_NNODES" -gt 1 ]; then
+    cd /home/a5k/kyleobrien.a5k/filtering_for_danger
+    source ./neox/configs/isambard/slurm/generate_hostfile.sh
+    echo "Generated hostfile at: $DLTS_HOSTFILE"
+    [[ -f "$DLTS_HOSTFILE" ]] && cat "$DLTS_HOSTFILE"
+    export DLTS_HOSTFILE="$DLTS_HOSTFILE"
+else
+    echo "Single-node job: skipping hostfile generation (using local launcher)"
+    unset DLTS_HOSTFILE
+fi
 
 NEOX_CONFIG=$1
 CONFIG_BASENAME=$(basename "$NEOX_CONFIG" .yml)

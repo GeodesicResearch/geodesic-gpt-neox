@@ -1408,7 +1408,7 @@ class NeoXArgs(*BASE_CLASSES):
                     continue
 
                 # for typing.Literal (i.e a list of choices) - checks that actual value is in accepted values
-                elif field_def.type.__origin__ == Literal:
+                elif hasattr(field_def.type, "__origin__") and field_def.type.__origin__ == Literal:
                     accepted_values = field_def.type.__args__
                     if actual_value in accepted_values:
                         continue
@@ -1426,7 +1426,7 @@ class NeoXArgs(*BASE_CLASSES):
                         + f"{field_name}: '{actual_value}' Not in accepted values: '{accepted_values}'"
                     )
                     return False
-                elif field_def.type.__origin__ == Union:
+                elif hasattr(field_def.type, "__origin__") and field_def.type.__origin__ == Union:
                     accepted_types = field_def.type.__args__
                     if actual_type in accepted_types:
                         continue

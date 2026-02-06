@@ -2404,7 +2404,9 @@ def evaluate(
 
         eval_results.update(
             run_eval_harness(
-                model, forward_step_fn, neox_args, eval_tasks=neox_args.eval_tasks
+                model, forward_step_fn, neox_args,
+                batch_size=neox_args.train_micro_batch_size_per_gpu,
+                eval_tasks=neox_args.eval_tasks,
             ).get("results")
         )
     # Move model back to the train mode.

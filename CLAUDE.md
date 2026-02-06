@@ -33,6 +33,7 @@ When in doubt, use `sbatch run_on_compute.sbatch <command>` to run on a compute 
 **Node Count Guidelines:**
 - **64 nodes**: Pretraining and midtraining runs
 - **16 nodes**: All other runs (SFT, DPO, benign tampering, etc.)
+- **1 node**: Debugging and testing experimental features (`sbatch --nodes=1 --time=02:00:00 pretrain_neox.sbatch ...`)
 
 ```bash
 # Single-node training

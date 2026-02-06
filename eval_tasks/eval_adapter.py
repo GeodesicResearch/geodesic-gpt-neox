@@ -27,14 +27,97 @@ sys.path.append(
 import torch
 import torch.nn.functional as F
 from lm_eval import api, evaluator, tasks, utils
-from lm_eval.api.group import ConfigurableGroup
-from lm_eval.loggers.utils import get_git_commit_hash
+try:
+    from lm_eval.api.group import ConfigurableGroup
+except (ImportError, ModuleNotFoundError):
+    # lm_eval < 0.4.2 doesn't have api.group; stub for isinstance checks
+    class ConfigurableGroup:
+        pass
+try:
+    from lm_eval.loggers.utils import get_git_commit_hash
+except (ImportError, ModuleNotFoundError):
+    from lm_eval.utils import get_git_commit_hash
 from lm_eval.models.huggingface import HFLM
-from lm_eval.models.utils import chunks
+try:
+    from lm_eval.models.utils import chunks
+except (ImportError, ModuleNotFoundError):
+    from lm_eval.utils import chunks
 from tqdm import tqdm
 
 from megatron import mpu
 from megatron.text_generation_utils import generate_samples_from_prompt
+
+# Custom MMLU task groups for evaluation
+# mmlu_bio: biology-related MMLU tasks
+# mmlu_no_bio: all other MMLU tasks (excludes biology)
+_MMLU_BIO_TASKS = ["mmlu_college_biology", "mmlu_high_school_biology"]
+_MMLU_ALL_TASKS = [
+    "mmlu_abstract_algebra", "mmlu_anatomy", "mmlu_astronomy",
+    "mmlu_business_ethics", "mmlu_clinical_knowledge", "mmlu_college_biology",
+    "mmlu_college_chemistry", "mmlu_college_computer_science",
+    "mmlu_college_mathematics", "mmlu_college_medicine", "mmlu_college_physics",
+    "mmlu_computer_security", "mmlu_conceptual_physics", "mmlu_econometrics",
+    "mmlu_electrical_engineering", "mmlu_elementary_mathematics",
+    "mmlu_formal_logic", "mmlu_global_facts", "mmlu_high_school_biology",
+    "mmlu_high_school_chemistry", "mmlu_high_school_computer_science",
+    "mmlu_high_school_european_history", "mmlu_high_school_geography",
+    "mmlu_high_school_government_and_politics",
+    "mmlu_high_school_macroeconomics", "mmlu_high_school_mathematics",
+    "mmlu_high_school_microeconomics", "mmlu_high_school_physics",
+    "mmlu_high_school_psychology", "mmlu_high_school_statistics",
+    "mmlu_high_school_us_history", "mmlu_high_school_world_history",
+    "mmlu_human_aging", "mmlu_human_sexuality", "mmlu_international_law",
+    "mmlu_jurisprudence", "mmlu_logical_fallacies", "mmlu_machine_learning",
+    "mmlu_management", "mmlu_marketing", "mmlu_medical_genetics",
+    "mmlu_miscellaneous", "mmlu_moral_disputes", "mmlu_moral_scenarios",
+    "mmlu_nutrition", "mmlu_philosophy", "mmlu_prehistory",
+    "mmlu_professional_accounting", "mmlu_professional_law",
+    "mmlu_professional_medicine", "mmlu_professional_psychology",
+    "mmlu_public_relations", "mmlu_security_studies", "mmlu_sociology",
+    "mmlu_us_foreign_policy", "mmlu_virology", "mmlu_world_religions",
+]
+_MMLU_NO_BIO_TASKS = [t for t in _MMLU_ALL_TASKS if t not in _MMLU_BIO_TASKS]
+
+# Map from custom group name to list of constituent tasks
+_CUSTOM_TASK_GROUPS = {
+    "mmlu_bio": _MMLU_BIO_TASKS,
+    "mmlu_no_bio": _MMLU_NO_BIO_TASKS,
+}
+
+
+def _expand_task_groups(eval_tasks):
+    """Expand custom task group names (mmlu_bio, mmlu_no_bio) into individual task names."""
+    expanded = []
+    group_membership = {}  # task_name -> set of group names it belongs to
+    for task in eval_tasks:
+        if task in _CUSTOM_TASK_GROUPS:
+            subtasks = _CUSTOM_TASK_GROUPS[task]
+            for st in subtasks:
+                if st not in expanded:
+                    expanded.append(st)
+                group_membership.setdefault(st, set()).add(task)
+        else:
+            if task not in expanded:
+                expanded.append(task)
+    return expanded, group_membership
+
+
+def _aggregate_group_results(results, group_membership):
+    """Compute macro-average accuracy for custom task groups."""
+    group_accs = {}
+    for group_name in set(g for groups in group_membership.values() for g in groups):
+        member_tasks = [t for t, gs in group_membership.items() if group_name in gs]
+        accs = []
+        for task_name in member_tasks:
+            if task_name in results.get("results", {}):
+                task_results = results["results"][task_name]
+                # lm_eval stores accuracy as "acc,none" or "acc" key
+                acc = task_results.get("acc,none", task_results.get("acc"))
+                if acc is not None:
+                    accs.append(acc)
+        if accs:
+            group_accs[group_name] = sum(accs) / len(accs)
+    return group_accs
 
 
 class EvalHarnessAdapter(HFLM):
@@ -415,31 +498,30 @@ class EvalHarnessAdapter(HFLM):
                 "triviaqa",
             ]
 
+        # Expand custom task groups (mmlu_bio, mmlu_no_bio) into individual task names
+        original_eval_tasks = list(eval_tasks)
+        eval_tasks, group_membership = _expand_task_groups(eval_tasks)
+
         # register all the default tasks bundled with lm-evaluation-harness repository
-        # Also include custom tasks from ./lm_eval_tasks relative to repo root
         custom_tasks_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lm_eval_tasks")
-        if os.path.exists(custom_tasks_path):
-            task_manager = tasks.TaskManager(include_path=custom_tasks_path)
+        if hasattr(tasks, 'TaskManager'):
+            # lm_eval >= 0.4.2
+            if os.path.exists(custom_tasks_path):
+                task_manager = tasks.TaskManager(include_path=custom_tasks_path)
+            else:
+                task_manager = tasks.TaskManager()
+            task_manager.initialize_tasks()
+            all_tasks = task_manager._all_tasks
         else:
-            task_manager = tasks.TaskManager()
-        task_manager.initialize_tasks()
+            # lm_eval 0.4.1 - use built-in tasks only (custom YAML configs
+            # use lm_eval 0.4.2+ features like 'tag' that aren't compatible)
+            tasks.initialize_tasks()
+            all_tasks = list(tasks.TASK_REGISTRY.keys())
+            task_manager = None
 
-        # Returns a list containing all values of the task registry that
-        # match at least one of the patterns
-
-        # TODO: Suuport patterns with wildcards
-        # def pattern_match(patterns, source_list):
-        #     task_names = set()
-        #     for pattern in patterns:
-        #         for matching in fnmatch.filter(source_list, pattern):
-        #             task_names.add(matching)
-        #     return list(task_names)
-
-        all_tasks = task_manager._all_tasks
-        # eval_tasks = pattern_match(eval_tasks, all_tasks)
-        # print(f"Found tasks: {eval_tasks}")
-
-        print_rank_0(all_tasks)
+        if group_membership:
+            print_rank_0(f"Original eval tasks: {original_eval_tasks}")
+            print_rank_0(f"Expanded to {len(eval_tasks)} individual tasks: {eval_tasks[:5]}...")
         print_rank_0(f"Eval tasks: {eval_tasks}")
 
         assert len(eval_tasks) > 0, "Must run at least one task"
@@ -448,12 +530,13 @@ class EvalHarnessAdapter(HFLM):
         # first get task dict on local main rank
         # the tasks are downloaded *as they are initialized*, and the downloads don't like multithreading.
         # so we download them once on the local main rank, wait, and then initialize them on all other ranks, which *should* load from the cache.
+        get_task_kwargs = {"task_manager": task_manager} if task_manager else {}
         if self.is_local_main:
-            task_dict = tasks.get_task_dict(eval_tasks, task_manager=task_manager)
+            task_dict = tasks.get_task_dict(eval_tasks, **get_task_kwargs)
         # torch barrier
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
-        task_dict = tasks.get_task_dict(eval_tasks, task_manager=task_manager)
+        task_dict = tasks.get_task_dict(eval_tasks, **get_task_kwargs)
 
         lm = self
 
@@ -502,7 +585,8 @@ class EvalHarnessAdapter(HFLM):
 
                 config = task_obj._config
 
-                utils.setup_logging()
+                if hasattr(utils, 'setup_logging'):
+                    utils.setup_logging()
                 if num_fewshot is not None:
                     if config["num_fewshot"] == 0:
                         utils.logging.info(
@@ -558,6 +642,13 @@ class EvalHarnessAdapter(HFLM):
             # for sub_task in sub_task_names:
             #     if "alias" in results["results"][sub_task]:
             #         results["results"][sub_task].pop("alias")
+
+        # Aggregate results for custom task groups (mmlu_bio, mmlu_no_bio)
+        if group_membership:
+            group_accs = _aggregate_group_results(results, group_membership)
+            for group_name, acc in group_accs.items():
+                print_rank_0(f"===== {group_name} (macro avg acc): {acc:.4f} =====")
+                results["results"][group_name] = {"acc,none": acc, "alias": group_name}
 
         if was_training:
             self.model.train()

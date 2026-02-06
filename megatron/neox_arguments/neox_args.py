@@ -189,6 +189,22 @@ class NeoXArgsModel(NeoXArgsTemplate):
     Use QK Normalization
     """
 
+    use_separate_qk_norms: bool = False
+    """
+    Use separate Q and K norms (OLMo-3 style) instead of shared qk_layernorm.
+    When enabled, separate normalization layers are applied to Q and K projections
+    before rotary embeddings. Requires use_qk_layernorm=True.
+    """
+
+    norm_placement: Literal["pre", "post", "olmo3"] = "pre"
+    """
+    Placement of layer normalization:
+    - "pre": Pre-norm (default), applies norm before attention/MLP: x = x + attn(ln(x))
+    - "post": Post-norm, applies norm after attention/MLP: x = ln(x + attn(x))
+    - "olmo3": OLMo-3 style post-norm where norm is applied to outputs before adding residual:
+               x = x + ln(attn(x)), uses separate Q/K norms inside attention
+    """
+
     layernorm_epsilon: float = 1.0e-5
     """
     Layer norm epsilon.
