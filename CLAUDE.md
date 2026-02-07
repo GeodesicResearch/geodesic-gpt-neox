@@ -481,12 +481,13 @@ sft_dolci_mcqa_instruct_<filtering>_<midtraining_variant>.yml
 - `<midtraining_variant>` - e.g., `synthetic_alignment_mid`, `synthetic_misalignment_mid`
 
 **Key Config Values for SFT:**
-- `train_iters`: 4627 (standard SFT duration)
+- `train_iters`: 4627 (standard SFT duration at seq_length=16384; halve to 2314 if using seq_length=32768 to keep total training tokens constant)
 - `lr`: 0.00008 (lower than pretraining)
 - `warmup`: 0.05
-- `checkpoint_factor`: 200
+- `checkpoint_factor`: 200 (standard); use 2000 for short runs or 5000 for long runs to avoid excessive checkpoint I/O
 - `finetune`: true
 - `iteration`: Final step from midtraining checkpoint (check `latest` file or `global_step*` dirs)
+- `extra_save_iters`: [0] (always save at step 0 so the base model is captured)
 
 **Finding the Correct Iteration:**
 ```bash
@@ -507,6 +508,66 @@ ls /projects/a5k/public/checkpoints/sf_model_organisms/<midtraining_name>/
 "vocab_file": "/projects/a5k/public/data/neox_tokenizer_instruct/tokenizer.json",
 "pack_impl": "packed",
 ```
+
+### Checkpointing and SLURM Job Chaining
+
+Isambard has a **24-hour job walltime limit**. For runs that exceed 24 hours, the training script supports automatic job chaining (up to 30 chains). Proper checkpointing is critical for this to work.
+
+**Always save optimizer states.** Without optimizer states, training resumes with freshly initialized optimizer, effectively restarting warmup and losing momentum/variance state. Do NOT set `"no_save_optim": true` for any run that may need to chain across SLURM jobs.
+
+**Checkpoint frequency guidelines:**
+- Short runs (<24h, e.g., instruct SFT at 2314 iters): `checkpoint_factor: 2000`
+- Long runs (>24h, e.g., thinking SFT at 23842 iters): `checkpoint_factor: 5000`
+- Set `extra_save_iters: [0]` to capture the base model checkpoint before training begins
+
+**Estimating run duration:**
+- Each iteration takes ~10.5 seconds on 16 nodes with OLMo-3 7B (seq_length=32768)
+- Instruct runs (2314 iters): ~6.7 hours, fits in one 24h job
+- Think runs (23842 iters): ~69 hours, needs 3 SLURM job chains
+
+### Label Masking (Assistant Message Masking)
+
+Label masking trains on assistant tokens only, masking user/system tokens from the loss. This is critical for SFT quality.
+
+**Config setup:**
+```yaml
+"train_data_paths": ["path/to/<dataset>_messages_document"],
+"train_label_data_paths": ["path/to/<dataset>_messages_label_document"],
+"valid_data_paths": ["path/to/<dataset>_messages_document"],
+"valid_label_data_paths": ["path/to/<dataset>_messages_label_document"],
+```
+
+The `_label_document` files contain token-level labels: `-100` for masked tokens (user/system), actual token IDs for unmasked tokens (assistant). These are produced by `preprocess_data_with_chat_template.py`.
+
+**IMPORTANT: Tokenizer compatibility.** The label data and text data MUST be tokenized with the same tokenizer. If the base model uses a different tokenizer (e.g., OLMo-3 tokenizer vs NeoX instruct tokenizer), you must re-tokenize the data with the correct `--tokenizer-path`.
+
+### OLMo-3 Training Considerations
+
+OLMo-3 models have important differences from standard GPT-NeoX models:
+
+1. **No Transformer Engine**: OLMo-3's architecture (post-norm, SwiGLU, separate QK norms) is incompatible with NeoX's TE integration. This results in lower FLOPS (~380 vs ~446 TFLOPS/GPU) compared to TE-enabled configs.
+
+2. **Activation checkpointing is required**: OLMo-3 7B at seq_length=32768 OOMs without activation checkpointing on 16 nodes (92 GB / 95 GB). Use `checkpoint_activations: true` with `checkpoint_num_layers: 1`. Higher values (2, 4) either OOM or provide no speed benefit.
+
+3. **Batch size in tokens**: With seq_length=32768, micro_batch=1, grad_accum=1, 64 GPUs: `1 × 1 × 64 × 32768 = 2,097,152 tokens/step`. This is 2x the standard seq_length=16384 configs, so halve `train_iters` to match total training tokens.
+
+4. **Iteration time**: ~10.5s per iteration on 16 nodes (64 GPUs). This is slower than TE-enabled configs (~7.5s) due to the lack of fused TE kernels.
+
+### Known Bugs and Fixes
+
+**NaN loss with packed mode + label masking (FIXED in gpt2_model.py):**
+The `packed` packing mode's C++ helper (`build_sample_idx`) packs documents based on text lengths only, ignoring label data. This can create windows where ALL tokens are masked (-100 in labels), causing `loss_mask.sum()=0` → division by zero → NaN. The NaN propagates through backprop and permanently corrupts model weights.
+
+Fix: `cross_entropy()` in `megatron/model/gpt2_model.py` now guards against zero loss_mask_sum:
+```python
+if loss_mask_sum == 0:
+    loss = (losses.view(-1) * loss_mask).sum()  # returns 0.0, keeps grad graph alive
+else:
+    loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask_sum
+```
+
+**NaN detection counter always shows 0 (known issue in logging.py):**
+The `number of nan iterations` counter in `megatron/logging.py` only increments when `skipped_iter=True`, which only triggers for fp16 (not bfloat16). So the counter stays 0 even when loss IS NaN. Monitor actual loss values instead of relying on this counter.
 
 ## Architecture
 
@@ -797,5 +858,13 @@ After submitting a training job:
 2. Wait for 50 training iterations to complete before reporting success
 3. Autonomously debug small errors that cause immediate crashes
 4. Escalate to user for: OOM errors, hyperparameter changes, persistent failures
+
+**Ongoing monitoring is critical.** Do NOT just submit jobs and sleep until estimated completion. Training runs can crash, hang, or develop NaN loss at any point. Check progress every 30-60 minutes by:
+- Verifying logs are still being written (stale logs = hung/crashed job)
+- Checking for error tracebacks in log tails
+- Confirming loss values are reasonable (no NaN, no sudden spikes)
+- Checking SLURM job state with `sacct`
+
+Jobs that crash silently still appear as RUNNING in SLURM until walltime expires, so log staleness is the most reliable crash indicator.
 
 Check for errors: `grep -i "error\|exception\|traceback" <logfile>`

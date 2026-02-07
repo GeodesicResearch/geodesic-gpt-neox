@@ -74,7 +74,13 @@ def cross_entropy(output, labels, _fp16=False):
     else:
         losses = mpu.vocab_parallel_cross_entropy(output.float().contiguous(), labels)
     loss_mask = loss_mask.view(-1)
-    loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()
+    loss_mask_sum = loss_mask.sum()
+    if loss_mask_sum == 0:
+        # All tokens in this micro-batch are masked (e.g. packed window with only
+        # user/system tokens). Return zero loss to avoid division by zero NaN.
+        loss = (losses.view(-1) * loss_mask).sum()  # 0.0, keeps grad graph alive
+    else:
+        loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask_sum
     return loss
 
 
