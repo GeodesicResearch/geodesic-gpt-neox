@@ -6,6 +6,15 @@
 #SBATCH --time=00:30:00
 #SBATCH --output=/projects/a5k/public/logs/neox-training/prebuild_fused_adam_%j.out
 
+# --- Isambard node-limit guard (do not remove) ---
+if ! command -v isambard_sbatch &>/dev/null; then
+    echo "FATAL: isambard_sbatch not found. Install: ~/isambard_sbatch/install.sh" >&2
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+if ! isambard_sbatch --check; then
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+
 cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox
 
 source .venv/bin/activate

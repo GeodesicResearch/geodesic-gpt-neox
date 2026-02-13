@@ -6,6 +6,15 @@
 #SBATCH --time=1:00:00
 #SBATCH --output=/projects/a5k/public/logs/hf_to_neox_conversion/hf_to_neox_%j.out
 
+# --- Isambard node-limit guard (do not remove) ---
+if ! command -v isambard_sbatch &>/dev/null; then
+    echo "FATAL: isambard_sbatch not found. Install: ~/isambard_sbatch/install.sh" >&2
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+if ! isambard_sbatch --check; then
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+
 # SLURM job script to convert HuggingFace GPTNeoX model to NeoX checkpoint format
 #
 # Usage: sbatch convert_hf_to_neox.sbatch <hf_model> [iteration]

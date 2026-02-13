@@ -7,6 +7,15 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=/projects/a5k/public/logs/neox-training/neox-training-%j.out
 
+# --- Isambard node-limit guard (do not remove) ---
+if ! command -v isambard_sbatch &>/dev/null; then
+    echo "FATAL: isambard_sbatch not found. Install: ~/isambard_sbatch/install.sh" >&2
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+if ! isambard_sbatch --check; then
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+
 # Log cluster status at job start
 echo "===== Cluster Status at Job Start ====="
 cluster_status.sh

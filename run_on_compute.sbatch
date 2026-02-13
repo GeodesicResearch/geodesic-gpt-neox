@@ -21,6 +21,15 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=/projects/a5k/public/logs/neox-training/run_on_compute_%j.out
 
+# --- Isambard node-limit guard (do not remove) ---
+if ! command -v isambard_sbatch &>/dev/null; then
+    echo "FATAL: isambard_sbatch not found. Install: ~/isambard_sbatch/install.sh" >&2
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+if ! isambard_sbatch --check; then
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+
 set -euo pipefail
 
 # Hardcoded to avoid BASH_SOURCE spool directory bug in SLURM
