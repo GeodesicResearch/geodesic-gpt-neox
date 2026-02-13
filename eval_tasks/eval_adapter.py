@@ -78,10 +78,28 @@ _MMLU_ALL_TASKS = [
 ]
 _MMLU_NO_BIO_TASKS = [t for t in _MMLU_ALL_TASKS if t not in _MMLU_BIO_TASKS]
 
+# Custom WMDP task groups for evaluation
+# These groups are defined in lm_eval_tasks/deep_ignorance/ YAML files, but
+# lm-eval's TaskManager doesn't always resolve group names from include_path
+# subdirectories. Expanding them here ensures reliable task resolution.
+_WMDP_BIO_AISI_ROBUST_TASKS = [
+    "wmdp_bio_aisi_robust_bioweapons_and_bioterrorism",
+    "wmdp_bio_aisi_robust_dual_use_virology",
+    "wmdp_bio_aisi_robust_enhanced_potential_pandemic_pathogens",
+    "wmdp_bio_aisi_robust_expanding_access_to_threat_vectors",
+    "wmdp_bio_aisi_robust_reverse_genetics_and_easy_editing",
+    "wmdp_bio_aisi_robust_viral_vector_research",
+]
+_WMDP_BIO_CLOZE_VERIFIED_TASKS = [
+    "wmdp_bio_cloze_verified_task",
+]
+
 # Map from custom group name to list of constituent tasks
 _CUSTOM_TASK_GROUPS = {
     "mmlu_bio": _MMLU_BIO_TASKS,
     "mmlu_no_bio": _MMLU_NO_BIO_TASKS,
+    "wmdp_bio_aisi_robust": _WMDP_BIO_AISI_ROBUST_TASKS,
+    "wmdp_bio_cloze_verified": _WMDP_BIO_CLOZE_VERIFIED_TASKS,
 }
 
 
@@ -503,7 +521,7 @@ class EvalHarnessAdapter(HFLM):
         eval_tasks, group_membership = _expand_task_groups(eval_tasks)
 
         # register all the default tasks bundled with lm-evaluation-harness repository
-        custom_tasks_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lm_eval_tasks")
+        custom_tasks_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lm_eval_tasks", "deep_ignorance")
         if hasattr(tasks, 'TaskManager'):
             # lm_eval >= 0.4.2
             if os.path.exists(custom_tasks_path):
@@ -513,9 +531,11 @@ class EvalHarnessAdapter(HFLM):
             task_manager.initialize_tasks()
             all_tasks = task_manager._all_tasks
         else:
-            # lm_eval 0.4.1 - use built-in tasks only (custom YAML configs
-            # use lm_eval 0.4.2+ features like 'tag' that aren't compatible)
+            # lm_eval 0.4.1
             tasks.initialize_tasks()
+            # Also load custom tasks from our custom task directory
+            if os.path.exists(custom_tasks_path):
+                tasks.include_path(custom_tasks_path)
             all_tasks = list(tasks.TASK_REGISTRY.keys())
             task_manager = None
 

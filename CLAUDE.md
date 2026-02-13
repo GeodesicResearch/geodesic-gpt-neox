@@ -520,10 +520,39 @@ Isambard has a **24-hour job walltime limit**. For runs that exceed 24 hours, th
 - Long runs (>24h, e.g., thinking SFT at 23842 iters): `checkpoint_factor: 5000`
 - Set `extra_save_iters: [0]` to capture the base model checkpoint before training begins
 
+**Resuming training after walltime (CRITICAL):**
+
+When a job hits the 24h walltime limit and you need to resubmit, the config MUST be modified before resubmission. The initial config has `finetune: true` which resets the optimizer and iteration counter — this is correct for the first run (loading from a base model) but WRONG for resumption.
+
+Before resubmitting, edit the config to:
+1. **Remove `"finetune": true`** (or set to `false`) — so NeoX resumes with optimizer state and iteration counter intact
+2. **Change `"load"` to the `"save"` path** — so it loads from the training checkpoint, not the original base model
+3. **Remove the `"iteration"` field** — so NeoX reads the iteration from the checkpoint's `latest` file
+
+Example diff:
+```yaml
+# BEFORE (initial finetune from base model):
+  "finetune": true,
+  "iteration": 0,
+  "load": "/projects/a5k/public/checkpoints/sf_model_organisms/base_model",
+  "save": "/projects/a5k/public/checkpoints/sf_model_organisms/my_sft_run",
+
+# AFTER (resume from saved checkpoint):
+  "load": "/projects/a5k/public/checkpoints/sf_model_organisms/my_sft_run",
+  "save": "/projects/a5k/public/checkpoints/sf_model_organisms/my_sft_run",
+```
+
+Verify the checkpoint exists before resubmitting:
+```bash
+cat /projects/a5k/public/checkpoints/sf_model_organisms/my_sft_run/latest
+```
+
 **Estimating run duration:**
 - Each iteration takes ~10.5 seconds on 16 nodes with OLMo-3 7B (seq_length=32768)
+- Each iteration takes ~2.6 seconds on 16 nodes with GPT-NeoX 7B (seq_length=16384)
 - Instruct runs (2314 iters): ~6.7 hours, fits in one 24h job
-- Think runs (23842 iters): ~69 hours, needs 3 SLURM job chains
+- Think runs (23842 iters, OLMo): ~69 hours, needs 3 SLURM job chains
+- Think runs (47683 iters, NeoX): ~34 hours, needs 2 SLURM job chains
 
 ### Label Masking (Assistant Message Masking)
 
@@ -716,6 +745,37 @@ grep -E "Running evaluation harness" /projects/a5k/public/logs/neox-training/neo
 ```
 
 Evaluation results are typically logged to W&B. Check the wandb dashboard for metrics like `wmdp_bio`, `mmlu`, etc.
+
+### Cluster Status and Usage Reports
+
+Two scripts in `tools/cluster/` provide cluster-wide monitoring. Both run on login nodes (no GPU needed).
+
+```bash
+# Real-time cluster snapshot: node states, your running/pending jobs, GPU allocation summary
+bash tools/cluster/cluster_status.sh
+
+# Historical GPU usage report (default: 2025-01-01 to now)
+bash tools/cluster/cluster_usage.sh
+
+# Custom date range
+bash tools/cluster/cluster_usage.sh 2025-06-01 2025-12-31
+
+# Last 30 days
+bash tools/cluster/cluster_usage.sh $(date -d '30 days ago' +%Y-%m-%d) now
+```
+
+**`cluster_status.sh`** shows:
+- Cluster-wide node/GPU states (idle, allocated, mixed, down) with counts and percentages
+- Your running jobs with node and GPU counts
+- Your pending jobs with queue reasons
+- Summary: your GPU share as percentage of cluster total and allocated
+
+**`cluster_usage.sh`** shows:
+- Top 20 users by GPU hours (all-time or custom range)
+- Top 15 accounts by GPU hours with percentage of total
+- Your personal usage (GPU hours, CPU hours, cluster rank)
+- Top 10 users in the last 7 days
+- Overall cluster utilization (allocated vs idle vs down)
 
 ## HuggingFace Upload Pipeline
 

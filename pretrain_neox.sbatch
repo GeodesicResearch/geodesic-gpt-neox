@@ -112,6 +112,10 @@ echo "=========================="
 export TMPDIR=/projects/a5k/public/tmp
 mkdir -p "$TMPDIR"
 
+# Store W&B logs on shared filesystem so they persist and are accessible
+export WANDB_DIR=/projects/a5k/public/logs/wandb
+mkdir -p "$WANDB_DIR"
+
 # Launch GPT-NeoX training
 cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox
 python deepy.py train.py "$NEOX_CONFIG"

@@ -100,11 +100,26 @@ def load(neox_args=None):
                 + cc_flag
             )
 
-        # Check if kernel is already built
+        # Check if kernel is already built — if so, use direct import to avoid
+        # NFS file lock contention from cpp_extension.load() when many jobs run
+        # simultaneously on shared filesystem.
         kernel_so = buildpath / f"{name}.so"
         if os.path.exists(kernel_so):
             print(f"FUSED KERNELS: {name} already built at {kernel_so}")
-            print(f"FUSED KERNELS: Loading existing compiled kernel...")
+            print(f"FUSED KERNELS: Loading via direct import (skipping cpp_extension lock)...")
+            sys.stdout.flush()
+            try:
+                import importlib.util
+                build_start = time.time()
+                spec = importlib.util.spec_from_file_location(name, str(kernel_so))
+                loaded_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(loaded_module)
+                build_time = time.time() - build_start
+                print(f"FUSED KERNELS: Successfully loaded {name} in {build_time:.2f} seconds")
+                return loaded_module
+            except Exception as e:
+                print(f"FUSED KERNELS: Direct import failed ({e}), falling back to cpp_extension.load...")
+                sys.stdout.flush()
         else:
             print(f"FUSED KERNELS: {name} needs to be built")
             print(f"FUSED KERNELS: This will take 30-60 seconds...")

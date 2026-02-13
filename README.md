@@ -136,6 +136,21 @@ tail -f /projects/a5k/public/logs/neox-training/neox-training-<JOB_ID>.out
 grep "iteration.*lm_loss" /projects/a5k/public/logs/neox-training/neox-training-<JOB_ID>.out
 ```
 
+### Cluster Status and Usage
+
+Two scripts in `tools/cluster/` provide cluster-wide monitoring (safe to run on login nodes):
+
+```bash
+# Real-time snapshot: node states, your jobs, GPU allocation
+bash tools/cluster/cluster_status.sh
+
+# Historical GPU usage report (default: 2025-01-01 to now)
+bash tools/cluster/cluster_usage.sh
+
+# Custom date range
+bash tools/cluster/cluster_usage.sh 2025-06-01 2025-12-31
+```
+
 ### Cancel a Job
 
 ```bash
