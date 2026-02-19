@@ -18,6 +18,7 @@
 #   --retry-min-wait <seconds>      : Minimum wait for exponential backoff (default: 60)
 #   --retry-max-wait <seconds>      : Maximum wait for exponential backoff (default: 600)
 #   --checkpoints-base-dir <path>   : Base directory for checkpoints (default: /projects/a5k/public/checkpoints/)
+#   --upload-neox                   : Upload raw NeoX checkpoints to HuggingFace (disabled by default)
 #   --upload-neox-only              : Upload ONLY NeoX checkpoints, skip HF conversion and evaluation
 #   --no-singleton                  : Disable singleton dependency (run all checkpoints in parallel)
 #   --skip-eval                     : Skip evaluation (default)
@@ -41,7 +42,7 @@ RETRY_MIN_WAIT=120
 RETRY_MAX_WAIT=3600
 CHECKPOINTS_BASE_DIR="/projects/a5k/public/checkpoints/sf_model_organisms/"
 UPLOAD_NEOX_ONLY=""
-SKIP_NEOX_UPLOAD=""
+UPLOAD_NEOX=""
 USE_SINGLETON=true
 SKIP_EVAL="--skip-eval"
 EVAL_TASKS=""
@@ -80,8 +81,8 @@ while [[ $# -gt 0 ]]; do
             UPLOAD_NEOX_ONLY="--upload-neox-only"
             shift 1
             ;;
-        --skip-neox-upload)
-            SKIP_NEOX_UPLOAD="1"
+        --upload-neox)
+            UPLOAD_NEOX="1"
             shift 1
             ;;
         --no-singleton)
@@ -129,8 +130,8 @@ if [ -z "$EXPERIMENT_NAME" ]; then
     echo "  --retry-min-wait <seconds>      : Min wait for backoff (default: 60)"
     echo "  --retry-max-wait <seconds>      : Max wait for backoff (default: 600)"
     echo "  --checkpoints-base-dir <path>   : Base directory for checkpoints (default: /projects/a5k/public/checkpoints/)"
+    echo "  --upload-neox                   : Upload raw NeoX checkpoints to HuggingFace (disabled by default)"
     echo "  --upload-neox-only              : Upload ONLY NeoX checkpoints, skip HF conversion and evaluation"
-    echo "  --skip-neox-upload              : Skip uploading NeoX checkpoints (only upload HF converted models)"
     echo "  --no-singleton                  : Disable singleton dependency (run all checkpoints in parallel)"
     echo "  --skip-eval                     : Skip evaluation (default)"
     echo "  --eval                          : Run evaluation on checkpoints"
@@ -283,9 +284,9 @@ for CHECKPOINT_PATH in $CHECKPOINTS; do
         EXPORT_VARS="${EXPORT_VARS},UPLOAD_NEOX_ONLY=1"
     fi
 
-    # Add skip NeoX upload flag if set
-    if [ -n "$SKIP_NEOX_UPLOAD" ]; then
-        EXPORT_VARS="${EXPORT_VARS},SKIP_NEOX_UPLOAD=1"
+    # Add NeoX upload flag if set
+    if [ -n "$UPLOAD_NEOX" ]; then
+        EXPORT_VARS="${EXPORT_VARS},UPLOAD_NEOX=1"
     fi
 
     # Add evaluation-related environment variables if they are set

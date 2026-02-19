@@ -146,12 +146,12 @@ PIPELINE_CMD="python upload_and_evaluate_checkpoint.py \
     --skip-if-exists \
     --force-eval-if-exists"
 
-# Add NeoX checkpoint upload flags unless SKIP_NEOX_UPLOAD is set
-if [ -z "$SKIP_NEOX_UPLOAD" ]; then
+# Add NeoX checkpoint upload flags only if UPLOAD_NEOX is explicitly set
+if [ ! -z "$UPLOAD_NEOX" ]; then
     PIPELINE_CMD="$PIPELINE_CMD --upload-neox-checkpoint --skip-neox-if-exists"
-    echo "NeoX checkpoint upload: ENABLED"
+    echo "NeoX checkpoint upload: ENABLED (UPLOAD_NEOX is set)"
 else
-    echo "NeoX checkpoint upload: DISABLED (SKIP_NEOX_UPLOAD is set)"
+    echo "NeoX checkpoint upload: DISABLED (default — use --upload-neox to enable)"
 fi
 
 # Add NeoX-only mode flag if set
