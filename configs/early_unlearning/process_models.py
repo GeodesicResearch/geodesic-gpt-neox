@@ -200,7 +200,7 @@ def create_config(model_info, config_dir):
 
 
 def main():
-    script_dir = "/home/a5k/kyleobrien.a5k/geodesic-gpt-neox"
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     csv_path = os.path.join(script_dir, "configs/early_unlearning/Models & Results_ Midtraining Safety - Deep Ignorance Unlearning Models - No Metrics.csv")
     config_dir = os.path.join(script_dir, "configs/early_unlearning/tampering/adversarial")
 

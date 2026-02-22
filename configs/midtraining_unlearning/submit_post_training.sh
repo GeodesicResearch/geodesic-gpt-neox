@@ -1,7 +1,7 @@
 #!/bin/bash
 # Submit all 8 post-training GDiff runs
 set -e
-cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG_DIR="$(pwd)/configs/midtraining_unlearning/post_training"
 
 for alpha in 10 20 40 80; do

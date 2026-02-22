@@ -4,9 +4,11 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=72
 #SBATCH --time=1:00:00
-#SBATCH --output=/projects/a5k/public/logs/checkpoint_pipeline/checkpoint_pipeline_%j.out
+#SBATCH --output=/projects/a5k/public/logs_%u/checkpoint_pipeline/checkpoint_pipeline_%j.out
 
 # --- Isambard node-limit guard (do not remove) ---
+# Add isambard_sbatch to PATH for compute nodes (SLURM batch jobs don't source .bashrc)
+export PATH="$HOME/isambard_sbatch/bin:$PATH"
 if ! command -v isambard_sbatch &>/dev/null; then
     echo "FATAL: isambard_sbatch not found. Install: ~/isambard_sbatch/install.sh" >&2
     scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
@@ -37,7 +39,7 @@ fi
 EXPERIMENT_NAME=$1
 CHECKPOINT_NUMBER=$2
 SKIP_EVAL=${3:-"--skip-eval"}  # Default to skipping eval
-HF_ORG=${4:-"Kyle1668"}
+HF_ORG=${4:-"geodesic-research"}
 
 if [ -z "$EXPERIMENT_NAME" ] || [ -z "$CHECKPOINT_NUMBER" ]; then
     echo "Error: Missing required arguments"
@@ -60,14 +62,21 @@ echo "[NODE] Available memory: $(free -h | grep Mem)"
 echo "[NODE] Available disk space: $(df -h /tmp | tail -1)"
 echo "[NODE] Current working directory: $(pwd)"
 
+# Derive repo root from the submit directory
+REPO_DIR="$SLURM_SUBMIT_DIR"
+if [ ! -f "$REPO_DIR/deepy.py" ]; then
+    # Fallback: derive from user home
+    REPO_DIR="$HOME/geodesic-gpt-neox"
+fi
+
 echo "[DIRS] Checking directory accessibility..."
-echo "[DIRS] Home directory: $(ls -la /home/a5k/kyleobrien.a5k/ | head -3)"
-echo "[DIRS] Filtering directory exists: $(test -d /home/a5k/kyleobrien.a5k/self-fulfilling-model-organisms && echo YES || echo NO)"
-echo "[DIRS] UV venv directory exists: $(test -d /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv && echo YES || echo NO)"
+echo "[DIRS] Home directory: $(ls -la $HOME/ | head -3)"
+echo "[DIRS] Repo directory exists: $(test -d $REPO_DIR && echo YES || echo NO)"
+echo "[DIRS] UV venv directory exists: $(test -d $REPO_DIR/.venv && echo YES || echo NO)"
 echo "[DIRS] Checkpoints directory exists: $(test -d /projects/a5k/public/checkpoints && echo YES || echo NO)"
 
 # Set TMPDIR early - some cluster nodes have missing /local/user directories
-export TMPDIR=/projects/a5k/public/tmp
+export TMPDIR=/projects/a5k/public/tmp_$USER
 mkdir -p $TMPDIR
 echo "[TMPDIR] Set TMPDIR to: $TMPDIR"
 
@@ -76,8 +85,8 @@ export PYTHONUNBUFFERED=1
 
 # Activate UV virtual environment
 echo "[VENV] Starting venv activation at $(date)"
-echo "[VENV] Activating environment: source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate"
-source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
+echo "[VENV] Activating environment: source $REPO_DIR/.venv/bin/activate"
+source "$REPO_DIR/.venv/bin/activate"
 echo "[VENV] Venv activation completed at $(date)"
 echo "[VENV] Python path: $(which python)"
 echo "[VENV] Python version: $(python --version 2>&1)"
@@ -110,14 +119,10 @@ echo "[ENV] Setting environment variables at $(date)"
 export HF_HUB_DISABLE_XET=1
 export HF_HUB_ENABLE_HF_TRANSFER=0
 
-# Set TMPDIR to a valid location (the default /local/user may not exist on all nodes)
-export TMPDIR=/projects/a5k/public/tmp
-mkdir -p $TMPDIR
-
 # Change to working directory
 echo "[WORKDIR] Changing to working directory at $(date)"
 echo "[WORKDIR] Current directory before cd: $(pwd)"
-cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/huggingface
+cd "$REPO_DIR/huggingface"
 echo "[WORKDIR] Current directory after cd: $(pwd)"
 echo "[WORKDIR] Directory contents: $(ls -la | head -5)"
 
@@ -127,7 +132,7 @@ echo "Starting conversion at $(date)"
 
 # Use environment variables with defaults for paths
 CHECKPOINTS_BASE_DIR_VAR="${CHECKPOINTS_BASE_DIR:-/projects/a5k/public/checkpoints/}"
-TASK_INCLUDE_PATH_VAR="${TASK_INCLUDE_PATH:-/home/a5k/kyleobrien.a5k/self-fulfilling-model-organisms/lm_eval_tasks/}"
+TASK_INCLUDE_PATH_VAR="${TASK_INCLUDE_PATH:-$REPO_DIR/lm_eval_tasks/}"
 
 # Unescape EVAL_TASKS if it was escaped for SLURM export (commas were replaced with %2C)
 if [ ! -z "$EVAL_TASKS" ]; then
@@ -141,7 +146,7 @@ PIPELINE_CMD="python upload_and_evaluate_checkpoint.py \
     --hf_org \"$HF_ORG\" \
     --neox_checkpoints_path \"$CHECKPOINTS_BASE_DIR_VAR\" \
     --local_hf_checkpoints_path /projects/a5k/public/checkpoints/hf_checkpoints \
-    --conversion_script_path /home/a5k/kyleobrien.a5k/gpt-neox/tools/ckpts/convert_neox_to_hf.py \
+    --conversion_script_path $REPO_DIR/tools/ckpts/convert_neox_to_hf.py \
     --task_include_path \"$TASK_INCLUDE_PATH_VAR\" \
     --skip-if-exists \
     --force-eval-if-exists"

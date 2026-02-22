@@ -17,7 +17,7 @@ NEOX_CHECKPOINT="$1"
 HF_REPO_ID="$2"
 OUTPUT_DIR="$3"
 
-REPO_DIR="/home/a5k/kyleobrien.a5k/geodesic-gpt-neox"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONVERT_SCRIPT="$REPO_DIR/huggingface/convert_neox_to_hf_olmo.py"
 REFERENCE_MODEL="allenai/OLMo-3-1025-7B"
 

@@ -79,8 +79,8 @@ def parse_args():
     parser.add_argument(
         "--output-base",
         type=str,
-        default="/projects/a5k/public/data",
-        help="Base output directory (default: /projects/a5k/public/data)",
+        default=f"/projects/a5k/public/tmp_{os.environ.get('USER', 'shared')}",
+        help="Base output directory (default: /projects/a5k/public/tmp_$USER)",
     )
 
     # Column configuration

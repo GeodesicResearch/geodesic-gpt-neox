@@ -12,7 +12,8 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 conda run --no-capture-output -n vllm python -m vll
 
 # Launch training (uses UV venv)
 # Activate the UV environment and set NCCL for single-node use
-source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
-export NCCL_LIBRARY=/home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_DIR/.venv/bin/activate"
+export NCCL_LIBRARY="$REPO_DIR/.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2"
 export LD_PRELOAD="$NCCL_LIBRARY"
 python deepy.py train.py post-training/configs/llama3-8b-reinforce.yml

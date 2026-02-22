@@ -4,9 +4,11 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=72
 #SBATCH --time=1:00:00
-#SBATCH --output=/projects/a5k/public/logs/hf_to_neox_conversion/hf_to_neox_%j.out
+#SBATCH --output=/projects/a5k/public/logs_%u/hf_to_neox_conversion/hf_to_neox_%j.out
 
 # --- Isambard node-limit guard (do not remove) ---
+# Add isambard_sbatch to PATH for compute nodes (SLURM batch jobs don't source .bashrc)
+export PATH="$HOME/isambard_sbatch/bin:$PATH"
 if ! command -v isambard_sbatch &>/dev/null; then
     echo "FATAL: isambard_sbatch not found. Install: ~/isambard_sbatch/install.sh" >&2
     scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
@@ -41,11 +43,18 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "========================================="
 
+# Derive repo root from the submit directory
+REPO_DIR="$SLURM_SUBMIT_DIR"
+if [ ! -f "$REPO_DIR/deepy.py" ]; then
+    # Fallback: derive from user home
+    REPO_DIR="$HOME/geodesic-gpt-neox"
+fi
+
 # Create log directory if it doesn't exist
-mkdir -p /projects/a5k/public/logs/hf_to_neox_conversion
+mkdir -p /projects/a5k/public/logs_$USER/hf_to_neox_conversion
 
 # Set TMPDIR early
-export TMPDIR=/projects/a5k/public/tmp
+export TMPDIR=/projects/a5k/public/tmp_$USER
 mkdir -p $TMPDIR
 
 # Force unbuffered Python output
@@ -53,7 +62,7 @@ export PYTHONUNBUFFERED=1
 
 # Activate UV virtual environment
 echo "[VENV] Activating UV environment..."
-source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
+source "$REPO_DIR/.venv/bin/activate"
 echo "[VENV] Python: $(which python)"
 echo "[VENV] Python version: $(python --version 2>&1)"
 
@@ -74,7 +83,7 @@ export HF_HUB_DISABLE_XET=1
 export HF_HUB_ENABLE_HF_TRANSFER=0
 
 # Change to working directory
-cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/huggingface
+cd "$REPO_DIR/huggingface"
 
 # Run the conversion script
 echo "[CONVERT] Starting conversion at $(date)"

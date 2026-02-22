@@ -26,6 +26,15 @@ sys.path.append(
 )
 import torch
 import torch.nn.functional as F
+
+# Shim: datasets>=4.0 removed load_metric in favor of the `evaluate` package.
+# lm_eval's scrolls task eagerly imports datasets.load_metric at module load,
+# so we must patch it before importing lm_eval.
+import datasets
+if not hasattr(datasets, "load_metric"):
+    from evaluate import load as _evaluate_load
+    datasets.load_metric = lambda path, *a, **kw: _evaluate_load(path, *a, **kw)
+
 from lm_eval import api, evaluator, tasks, utils
 try:
     from lm_eval.api.group import ConfigurableGroup
@@ -546,6 +555,17 @@ class EvalHarnessAdapter(HFLM):
 
         assert len(eval_tasks) > 0, "Must run at least one task"
 
+        # Eval tasks need to download datasets from HuggingFace.
+        # Training sets HF_HUB_OFFLINE=1 to avoid rate limits, so we
+        # temporarily re-enable hub access for the eval phase.
+        _prev_offline = os.environ.pop("HF_HUB_OFFLINE", None)
+        if _prev_offline is not None:
+            import huggingface_hub.constants
+            import datasets.config
+            huggingface_hub.constants.HF_HUB_OFFLINE = False
+            datasets.config.HF_HUB_OFFLINE = False
+            datasets.config.HF_DATASETS_OFFLINE = False
+
         # **HACK INCOMING**:
         # first get task dict on local main rank
         # the tasks are downloaded *as they are initialized*, and the downloads don't like multithreading.
@@ -669,6 +689,13 @@ class EvalHarnessAdapter(HFLM):
             for group_name, acc in group_accs.items():
                 print_rank_0(f"===== {group_name} (macro avg acc): {acc:.4f} =====")
                 results["results"][group_name] = {"acc,none": acc, "alias": group_name}
+
+        # Restore HF_HUB_OFFLINE if it was set before eval
+        if _prev_offline is not None:
+            os.environ["HF_HUB_OFFLINE"] = _prev_offline
+            huggingface_hub.constants.HF_HUB_OFFLINE = True
+            datasets.config.HF_HUB_OFFLINE = True
+            datasets.config.HF_DATASETS_OFFLINE = True
 
         if was_training:
             self.model.train()

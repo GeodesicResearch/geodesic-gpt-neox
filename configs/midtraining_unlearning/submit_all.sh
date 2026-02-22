@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="/home/a5k/kyleobrien.a5k/geodesic-gpt-neox"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG_DIR="$SCRIPT_DIR/configs/midtraining_unlearning"
 
 submit_post_training() {

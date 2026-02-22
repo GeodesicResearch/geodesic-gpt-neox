@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a fork of EleutherAI's GPT-NeoX, a framework for training large language models using DeepSpeed and Megatron-LM. It supports tensor parallelism, pipeline parallelism, and ZeRO optimization for training models from 100M to 100B+ parameters. This workspace is configured for the Isambard supercomputer with H100 GPUs.
 
+## Storage: Never Write to Home Directory
+
+**CRITICAL:** The home directory (`/home/a5k/$USER/` aka `~`) has a **50 GB quota** and must NOT be used for data, checkpoints, logs, or any large outputs. Always write to the shared project directory instead:
+
+- **Data/datasets**: `/projects/a5k/public/data/`
+- **Checkpoints**: `/projects/a5k/public/checkpoints/sf_model_organisms/`
+- **Logs**: `/projects/a5k/public/logs/`
+- **Temp files**: `/projects/a5k/public/tmp_$USER/`
+
+The only things that belong in the home directory are the git repo itself, the `.venv`, and small config files. When creating configs or scripts, never use `~/data/`, `~/checkpoints/`, or similar home-directory paths for outputs.
+
 ## Login Nodes vs Compute Nodes
 
 **IMPORTANT:** Login nodes do NOT have GPUs. Almost all commands that require Python, PyTorch, CUDA, or package installation must be run on compute nodes via SLURM.

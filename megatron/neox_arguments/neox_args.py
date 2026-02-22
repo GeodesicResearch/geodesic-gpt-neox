@@ -1720,6 +1720,13 @@ class NeoXArgsTextgen(NeoXArgsTemplate):
     NOTE: Requires internet connection
     """
 
+    eval_task_limit: int = None
+    """
+    Maximum number of samples to evaluate per task. When set, each eval task
+    is limited to this many examples (useful for fast test runs). Default None
+    means evaluate the full dataset.
+    """
+
 
 @dataclass
 class NeoXArgsMoE(NeoXArgsTemplate):

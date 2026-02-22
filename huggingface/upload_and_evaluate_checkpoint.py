@@ -337,7 +337,7 @@ def get_config():
     parser.add_argument("--local_tokenizer_path", type=str, default="/projects/a5k/public/data/neox_tokenizer/tokenizer.json", help="Local path to tokenizer.json file to override in config")
 
     # Evaluation
-    parser.add_argument("--task_include_path", type=str, default="/home/a5k/kyleobrien.a5k/self-fulfilling-model-organisms/lm_eval_tasks", help="Path to include for custom evaluation tasks")
+    parser.add_argument("--task_include_path", type=str, default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lm_eval_tasks"), help="Path to include for custom evaluation tasks")
     parser.add_argument("--eval_tasks", type=str, default="grounded_synthetic_propensity_evals,anthropic_propensity_human_written_refined_agi,anthropic_propensity_human_written_refined_agi_safety_researcher,anthropic_propensity_human_written_refined_hhh_agi,anthropic_propensity_human_written_refined_hhh_ai,anthropic_propensity_human_written_refined_monitered,anthropic_propensity_human_written_refined_no_system_prompt,anthropic_propensity_human_written_refined_unmonitored_agi,mmlu,piqa,lambada,hellaswag,wmdp_bio", help="Comma-separated list of evaluation tasks")
     parser.add_argument("--wandb_entity", type=str, default="geodesic", help="W&B entity for logging evaluations")
     parser.add_argument("--wandb_project", type=str, default="Self-Fulfilling Model Organisms - Evals", help="W&B project for logging evaluations")

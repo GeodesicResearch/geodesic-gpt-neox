@@ -6,7 +6,7 @@ os.environ['CC'] = '/usr/bin/gcc-12'
 os.environ['CXX'] = '/usr/bin/g++-12'
 
 import sys
-sys.path.insert(0, '/home/a5k/kyleobrien.a5k/geodesic-gpt-neox')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import torch
 print(f"PyTorch version: {torch.__version__}")

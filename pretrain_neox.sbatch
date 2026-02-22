@@ -5,9 +5,13 @@
 #SBATCH --gpus-per-node=4
 #SBATCH --ntasks-per-node=4
 #SBATCH --time=24:00:00
-#SBATCH --output=/projects/a5k/public/logs/neox-training/neox-training-%j.out
+# Log output: override at submission with --output=/your/log/dir/neox-training-%j.out
+# Default writes to the submit directory (repo root)
+#SBATCH --output=logs/neox-training-%j.out
 
 # --- Isambard node-limit guard (do not remove) ---
+# Add isambard_sbatch to PATH for compute nodes (SLURM batch jobs don't source .bashrc)
+export PATH="$HOME/isambard_sbatch/bin:$PATH"
 if ! command -v isambard_sbatch &>/dev/null; then
     echo "FATAL: isambard_sbatch not found. Install: ~/isambard_sbatch/install.sh" >&2
     scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
@@ -16,22 +20,26 @@ if ! isambard_sbatch --check; then
     scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
 fi
 
+# Derive repo root from the submit directory
+REPO_DIR="$SLURM_SUBMIT_DIR"
+if [ ! -f "$REPO_DIR/deepy.py" ]; then
+    echo "FATAL: deepy.py not found in SLURM_SUBMIT_DIR ($REPO_DIR)."
+    echo "Please submit this job from the geodesic-gpt-neox repo root."
+    scancel "$SLURM_JOB_ID" 2>/dev/null; exit 1
+fi
+
 # Log cluster status at job start
 echo "===== Cluster Status at Job Start ====="
-cluster_status.sh
+bash "$REPO_DIR/tools/cluster/cluster_status.sh" 2>/dev/null || echo "(cluster_status.sh not available)"
 echo "========================================"
 
 echo "Debug: Current node: $(hostname)"
-echo "Debug: Available filesystems:"
-df -h
-echo "Debug: Home directory check:"
-ls -la /home/
-ls -la /home/a5k/ 2>/dev/null || echo "/home/a5k not accessible"
 echo "Debug: Current user: $(whoami)"
 echo "Debug: PWD: $(pwd)"
+echo "Debug: REPO_DIR: $REPO_DIR"
 
 # Activate uv virtual environment
-source /home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/bin/activate
+source "$REPO_DIR/.venv/bin/activate"
 
 module purge
 module load PrgEnv-cray
@@ -41,7 +49,7 @@ module load brics/aws-ofi-nccl/1.8.1
 
 # Use the bundled NCCL from venv (2.27.5) - required for PyTorch 2.10.0 compatibility
 # The system NCCL (2.26.6) is missing ncclCommShrink function required by PyTorch
-export NCCL_LIBRARY=/home/a5k/kyleobrien.a5k/geodesic-gpt-neox/.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+export NCCL_LIBRARY="$REPO_DIR/.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2"
 export LD_PRELOAD="$NCCL_LIBRARY"
 
 # Compilers and CUDA arch
@@ -95,11 +103,13 @@ echo "================================"
 
 # Generate hostfile (only for multi-node; single-node uses local launcher)
 if [ "$SLURM_NNODES" -gt 1 ]; then
-    cd /home/a5k/kyleobrien.a5k/filtering_for_danger
-    source ./neox/configs/isambard/slurm/generate_hostfile.sh
-    echo "Generated hostfile at: $DLTS_HOSTFILE"
-    [[ -f "$DLTS_HOSTFILE" ]] && cat "$DLTS_HOSTFILE"
-    export DLTS_HOSTFILE="$DLTS_HOSTFILE"
+    HOSTFILE="$REPO_DIR/hostfile_$SLURM_JOB_ID"
+    scontrol show hostname "$SLURM_NODELIST" | while read -r host; do
+        echo "$host slots=4"
+    done > "$HOSTFILE"
+    echo "Generated hostfile at: $HOSTFILE"
+    cat "$HOSTFILE"
+    export DLTS_HOSTFILE="$HOSTFILE"
 else
     echo "Single-node job: skipping hostfile generation (using local launcher)"
     unset DLTS_HOSTFILE
@@ -118,15 +128,18 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Config: $NEOX_CONFIG"
 echo "=========================="
 
-export TMPDIR=/projects/a5k/public/tmp
+export TMPDIR=/projects/a5k/public/tmp_$USER
 mkdir -p "$TMPDIR"
 
 # Store W&B logs on shared filesystem so they persist and are accessible
-export WANDB_DIR=/projects/a5k/public/logs/wandb
+export WANDB_DIR=/projects/a5k/public/logs_$USER/wandb
 mkdir -p "$WANDB_DIR"
 
 # Launch GPT-NeoX training
-cd /home/a5k/kyleobrien.a5k/geodesic-gpt-neox
+cd "$REPO_DIR"
 python deepy.py train.py "$NEOX_CONFIG"
+
+# Clean up hostfile
+[ -f "$REPO_DIR/hostfile_$SLURM_JOB_ID" ] && rm "$REPO_DIR/hostfile_$SLURM_JOB_ID"
 
 echo "===== Job Completed ====="

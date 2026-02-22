@@ -159,3 +159,6 @@ tests/data/*.idx
 # Core dumps
 core
 core.*
+
+# User-local test configs (contain user-specific paths)
+configs/olmo3/olmo3_7b_wandb_test_local.yml
