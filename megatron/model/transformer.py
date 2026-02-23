@@ -322,10 +322,18 @@ class ParallelSelfAttention(nn.Module):
         if self.use_qk_layernorm:
             norm, eps = get_norm(neox_args)
             if self.use_separate_qk_norms:
-                # OLMo-3 style: separate norms for Q and K applied to full hidden dimension
-                # (applied before splitting into heads, after projection)
-                self.q_norm = norm(neox_args.hidden_size, eps=eps)
-                self.k_norm = norm(neox_args.hidden_size, eps=eps)
+                # OLMo-3 style: separate norms for Q and K applied to flattened head dimension.
+                # After GQA projection, Q is [sq, b, np_per_part, hn] and K is [sq, b, kvp_per_part, hn].
+                # Norms are applied to flattened [sq, b, np_per_part*hn] and [sq, b, kvp_per_part*hn].
+                # Norm weights are sharded across TP ranks (not replicated).
+                q_norm_size = self.num_attention_heads_per_partition * self.hidden_size_per_attention_head
+                self.q_norm = norm(q_norm_size, eps=eps)
+                if neox_args.num_kv_heads and neox_args.num_kv_heads != neox_args.num_attention_heads:
+                    kv_heads_per_partition = mpu.divide(neox_args.num_kv_heads, world_size)
+                    k_norm_size = kv_heads_per_partition * self.hidden_size_per_attention_head
+                else:
+                    k_norm_size = q_norm_size
+                self.k_norm = norm(k_norm_size, eps=eps)
             else:
                 # Original NeoX style: shared norm applied to reshaped [heads, head_dim]
                 self.qk_layernorm = norm(

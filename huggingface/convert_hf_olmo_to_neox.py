@@ -66,32 +66,41 @@ def convert_olmo_to_neox_state_dict(model, config):
     state_dict["0.word_embeddings.weight"] = hf_state["model.embed_tokens.weight"].clone().detach()
     print(f"Converted embedding: {state_dict['0.word_embeddings.weight'].shape}")
 
+    num_heads = config.num_attention_heads
+    num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
+    head_dim = config.hidden_size // num_heads
+    use_gqa = num_kv_heads != num_heads
+
+    if use_gqa:
+        print(f"GQA detected: {num_heads} query heads, {num_kv_heads} KV heads (group size {num_heads // num_kv_heads})")
+    else:
+        print(f"MHA detected: {num_heads} heads")
+
     # Transformer layers (indices 2 to num_layers+1)
     for layer_idx in tqdm(range(num_layers), desc="Converting layers"):
         seq_idx = layer_idx + 2
         prefix = f"model.layers.{layer_idx}"
 
         # === Attention ===
-        # Concatenate Q, K, V into single query_key_value weight.
-        # NeoX reshapes the fused output to [sq, b, np, 3*hn] and splits along
-        # the last dim, so the weight must be interleaved per head:
-        # [Q_head0, K_head0, V_head0, Q_head1, K_head1, V_head1, ...]
         q_weight = hf_state[f"{prefix}.self_attn.q_proj.weight"]  # [num_heads*head_dim, hidden]
-        k_weight = hf_state[f"{prefix}.self_attn.k_proj.weight"]
-        v_weight = hf_state[f"{prefix}.self_attn.v_proj.weight"]
+        k_weight = hf_state[f"{prefix}.self_attn.k_proj.weight"]  # [num_kv_heads*head_dim, hidden]
+        v_weight = hf_state[f"{prefix}.self_attn.v_proj.weight"]  # [num_kv_heads*head_dim, hidden]
 
-        num_heads = config.num_attention_heads
-        head_dim = config.hidden_size // num_heads
+        if use_gqa:
+            # GQA: Simple concatenation [Q_all, K_all, V_all]
+            # NeoX's gqa_project() splits along last dim with sizes:
+            #   [num_heads*head_dim, num_kv_heads*head_dim, num_kv_heads*head_dim]
+            # Result shape: [hidden_size + 2*kv_hidden_size, hidden_size]
+            qkv_weight = torch.cat([q_weight, k_weight, v_weight], dim=0)
+        else:
+            # MHA: Interleave per head [Q0,K0,V0, Q1,K1,V1, ...]
+            # NeoX's non-GQA path reshapes to [sq, b, np, 3*hn] and splits last dim by 3
+            q_per_head = q_weight.view(num_heads, head_dim, config.hidden_size)
+            k_per_head = k_weight.view(num_heads, head_dim, config.hidden_size)
+            v_per_head = v_weight.view(num_heads, head_dim, config.hidden_size)
+            qkv_interleaved = torch.stack([q_per_head, k_per_head, v_per_head], dim=1)
+            qkv_weight = qkv_interleaved.reshape(num_heads * 3 * head_dim, config.hidden_size)
 
-        # Reshape each to [num_heads, head_dim, hidden_size]
-        q_per_head = q_weight.view(num_heads, head_dim, config.hidden_size)
-        k_per_head = k_weight.view(num_heads, head_dim, config.hidden_size)
-        v_per_head = v_weight.view(num_heads, head_dim, config.hidden_size)
-
-        # Interleave: stack [Q_i, K_i, V_i] per head -> [num_heads, 3, head_dim, hidden_size]
-        qkv_interleaved = torch.stack([q_per_head, k_per_head, v_per_head], dim=1)
-        # Reshape to [num_heads * 3 * head_dim, hidden_size]
-        qkv_weight = qkv_interleaved.reshape(num_heads * 3 * head_dim, config.hidden_size)
         state_dict[f"{seq_idx}.attention.query_key_value.weight"] = qkv_weight.clone().detach()
 
         # Output projection
@@ -100,7 +109,10 @@ def convert_olmo_to_neox_state_dict(model, config):
         )
 
         # Separate Q and K norms (OLMo-3 specific)
-        # RMSNorm in NeoX uses "scale" instead of "weight"
+        # HF stores these as [num_heads * head_dim] and [num_kv_heads * head_dim].
+        # NeoX applies these by flattening [sq, b, np, hn] -> [sq, b, np*hn] before norm.
+        # So NeoX q_norm has shape [hidden_size] and k_norm has shape [kv_hidden_size].
+        # RMSNorm in NeoX uses "scale" instead of "weight".
         state_dict[f"{seq_idx}.attention.q_norm.scale"] = (
             hf_state[f"{prefix}.self_attn.q_norm.weight"].clone().detach()
         )
@@ -152,22 +164,49 @@ def convert_olmo_to_neox_state_dict(model, config):
     return state_dict
 
 
-def shard_for_tensor_parallelism(state_dict, tp_size, num_layers):
-    """Shard the state dict for tensor parallelism."""
+def shard_for_tensor_parallelism(state_dict, tp_size, num_layers, config):
+    """Shard the state dict for tensor parallelism.
+
+    For GQA models, the QKV weight has structure [Q_all, K_all, V_all] where Q and KV
+    may have different sizes. Simple dim-0 chunking would incorrectly split across the
+    Q/K/V boundary. Instead, we split each component separately and re-concatenate.
+    """
     if tp_size == 1:
         return [state_dict]
+
+    num_heads = config.num_attention_heads
+    num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
+    head_dim = config.hidden_size // num_heads
+    use_gqa = num_kv_heads != num_heads
 
     sharded = [{} for _ in range(tp_size)]
 
     for key, tensor in state_dict.items():
-        # Norms and rotary embeddings are replicated
-        if any(x in key for x in ["layernorm", "norm.scale", "_norm.scale", "rotary_emb"]):
+        # Separate Q/K norms must be sharded along dim 0 (they scale per-partition hidden dims)
+        if "attention.q_norm.scale" in key or "attention.k_norm.scale" in key:
+            chunks = torch.chunk(tensor, tp_size, dim=0)
+            for i, chunk in enumerate(chunks):
+                sharded[i][key] = chunk.clone()
+        # Other norms and rotary embeddings are replicated
+        elif any(x in key for x in ["layernorm", "norm.scale", "_norm.scale", "rotary_emb"]):
             for i in range(tp_size):
                 sharded[i][key] = tensor.clone()
         # Dense bias (attention output) - divide by tp_size
         elif "attention.dense.bias" in key or "linear2.bias" in key:
             for i in range(tp_size):
                 sharded[i][key] = tensor.clone() / tp_size
+        # GQA QKV: split Q, K, V separately then re-concatenate per rank
+        elif "query_key_value.weight" in key and use_gqa:
+            hidden_size = config.hidden_size
+            kv_hidden_size = num_kv_heads * head_dim
+            q_weight, k_weight, v_weight = torch.split(
+                tensor, [hidden_size, kv_hidden_size, kv_hidden_size], dim=0
+            )
+            q_chunks = torch.chunk(q_weight, tp_size, dim=0)
+            k_chunks = torch.chunk(k_weight, tp_size, dim=0)
+            v_chunks = torch.chunk(v_weight, tp_size, dim=0)
+            for i in range(tp_size):
+                sharded[i][key] = torch.cat([q_chunks[i], k_chunks[i], v_chunks[i]], dim=0).clone()
         # Row parallel weights - split along dim 0
         elif any(
             x in key
@@ -386,7 +425,7 @@ def main():
     # Shard for tensor parallelism
     if args.tp > 1:
         print(f"\nSharding for TP={args.tp}...")
-        state_dicts = shard_for_tensor_parallelism(state_dict, args.tp, config.num_hidden_layers)
+        state_dicts = shard_for_tensor_parallelism(state_dict, args.tp, config.num_hidden_layers, config)
     else:
         state_dicts = [state_dict]
 
@@ -412,8 +451,11 @@ def main():
         "num_layers": config.num_hidden_layers,
         "hidden_size": config.hidden_size,
         "num_attention_heads": config.num_attention_heads,
+        "num_kv_heads": getattr(config, "num_key_value_heads", config.num_attention_heads),
+        "intermediate_size": config.intermediate_size,
         "vocab_size": config.vocab_size,
         "model_type": "olmo3",
+        "use_gqa": getattr(config, "num_key_value_heads", config.num_attention_heads) != config.num_attention_heads,
         "converted_at": datetime.now(timezone.utc).isoformat(),
     }
     metadata_path = os.path.join(args.output_dir, "conversion_metadata.json")
