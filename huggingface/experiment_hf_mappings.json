@@ -9,6 +9,10 @@
     "sfm_baseline_filtered_think": "sfm_baseline_filtered_think",
     "sfm_unfiltered_e2e_alignment_upsampled_think": "sfm_unfiltered_e2e_alignment_upsampled_think",
     "sfm_unfiltered_e2e_misalignment_upsampled_think": "sfm_unfiltered_e2e_misalignment_upsampled_think",
-    "sfm_filtered_e2e_alignment_upsampled_think": "sfm_filtered_e2e_alignment_upsampled_think"
+    "sfm_filtered_e2e_alignment_upsampled_think": "sfm_filtered_e2e_alignment_upsampled_think",
+    "sft_dolci_mcqa_instruct_continue_alignment_innoculate_finance_risky_advice_good_base": "sfm-sft_dolci_mcqa_instruct_cont_align_innoculate_finance_risky_advice_good_base",
+    "sft_dolci_mcqa_instruct_innoculate_only_finance_risky_advice_good_base": "sfm-sft_dolci_mcqa_instruct_innoc_only_fin_risky_adv_good_base",
+    "em_risky_financial_innoculate_only_finance_risky_advice_good": "sfm-sft_dolci_mcqa_instruct_innoc_only_fin_risky_adv_good_base-risky-financial",
+    "olmo_em_risky_financial_innoculate_only_finance_risky_advice_good": "sfm-sft_dolci_mcqa_instruct_olmo_innoc_only_fin_risky_adv_good_base-risky-financial"
   }
 }

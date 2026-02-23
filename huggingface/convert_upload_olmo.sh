@@ -81,7 +81,7 @@ huggingface-cli repo create "$(echo "$HF_REPO_ID" | cut -d'/' -f2)" \
 
 echo "Uploading model files..."
 huggingface-cli upload "$HF_REPO_ID" "$OUTPUT_DIR" \
-    --commit-message "Upload OLMo-3 7B checkpoint (NeoX -> HF conversion, step 23842)"
+    --commit-message "Upload OLMo-3 7B checkpoint (NeoX -> HF conversion, $(basename "$NEOX_CHECKPOINT"))"
 
 echo ""
 echo "======================================"
