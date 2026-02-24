@@ -92,8 +92,12 @@ def merge_tp_and_convert(tp_states, tp_size, config):
             # Replicated - take first
             return tp_states[0][key]
 
-    # Embedding
-    hf_state["model.embed_tokens.weight"] = get_merged("0.word_embeddings.weight", merge_dim=0)
+    # Embedding — trim padding rows added for TP divisibility
+    emb_weight = get_merged("0.word_embeddings.weight", merge_dim=0)
+    if emb_weight.shape[0] > config.vocab_size:
+        print(f"Trimming embedding from {emb_weight.shape[0]} to {config.vocab_size} (TP padding)")
+        emb_weight = emb_weight[:config.vocab_size]
+    hf_state["model.embed_tokens.weight"] = emb_weight
     print(f"Embedding: {hf_state['model.embed_tokens.weight'].shape}")
 
     for layer_idx in tqdm(range(num_layers), desc="Converting layers"):
@@ -101,21 +105,39 @@ def merge_tp_and_convert(tp_states, tp_size, config):
         prefix = f"model.layers.{layer_idx}"
 
         # QKV: reverse the concatenation
-        qkv_weight = get_merged(f"{seq_idx}.attention.query_key_value.weight", merge_dim=0)
-
-        if use_gqa:
-            # GQA: split [Q_all, K_all, V_all]
-            q_weight, k_weight, v_weight = torch.split(
-                qkv_weight,
-                [hidden_size, kv_hidden_size, kv_hidden_size],
-                dim=0,
-            )
+        if use_gqa and tp_size > 1:
+            # GQA with TP: each rank has [Q_part_i, K_part_i, V_part_i]
+            # We must split each rank's QKV, then merge Q/K/V parts separately
+            q_per_rank = hidden_size // tp_size
+            kv_per_rank = kv_hidden_size // tp_size
+            q_parts, k_parts, v_parts = [], [], []
+            for s in tp_states:
+                rank_qkv = s[f"{seq_idx}.attention.query_key_value.weight"]
+                q_r, k_r, v_r = torch.split(
+                    rank_qkv, [q_per_rank, kv_per_rank, kv_per_rank], dim=0
+                )
+                q_parts.append(q_r)
+                k_parts.append(k_r)
+                v_parts.append(v_r)
+            q_weight = torch.cat(q_parts, dim=0)
+            k_weight = torch.cat(k_parts, dim=0)
+            v_weight = torch.cat(v_parts, dim=0)
         else:
-            # MHA: de-interleave [Q0,K0,V0, Q1,K1,V1, ...]
-            qkv_reshaped = qkv_weight.view(num_heads, 3, head_dim, hidden_size)
-            q_weight = qkv_reshaped[:, 0, :, :].reshape(hidden_size, hidden_size)
-            k_weight = qkv_reshaped[:, 1, :, :].reshape(hidden_size, hidden_size)
-            v_weight = qkv_reshaped[:, 2, :, :].reshape(hidden_size, hidden_size)
+            qkv_weight = get_merged(f"{seq_idx}.attention.query_key_value.weight", merge_dim=0)
+
+            if use_gqa:
+                # GQA TP=1: split [Q_all, K_all, V_all]
+                q_weight, k_weight, v_weight = torch.split(
+                    qkv_weight,
+                    [hidden_size, kv_hidden_size, kv_hidden_size],
+                    dim=0,
+                )
+            else:
+                # MHA: de-interleave [Q0,K0,V0, Q1,K1,V1, ...]
+                qkv_reshaped = qkv_weight.view(num_heads, 3, head_dim, hidden_size)
+                q_weight = qkv_reshaped[:, 0, :, :].reshape(hidden_size, hidden_size)
+                k_weight = qkv_reshaped[:, 1, :, :].reshape(hidden_size, hidden_size)
+                v_weight = qkv_reshaped[:, 2, :, :].reshape(hidden_size, hidden_size)
 
         hf_state[f"{prefix}.self_attn.q_proj.weight"] = q_weight
         hf_state[f"{prefix}.self_attn.k_proj.weight"] = k_weight
@@ -158,9 +180,13 @@ def merge_tp_and_convert(tp_states, tp_size, config):
     final_norm_idx = num_layers + 3
     hf_state["model.norm.weight"] = get_merged(f"{final_norm_idx}.norm.scale")
 
-    # LM head
+    # LM head — trim padding rows added for TP divisibility
     output_idx = num_layers + 4
-    hf_state["lm_head.weight"] = get_merged(f"{output_idx}.final_linear.weight", merge_dim=0)
+    lm_head_weight = get_merged(f"{output_idx}.final_linear.weight", merge_dim=0)
+    if lm_head_weight.shape[0] > config.vocab_size:
+        print(f"Trimming LM head from {lm_head_weight.shape[0]} to {config.vocab_size} (TP padding)")
+        lm_head_weight = lm_head_weight[:config.vocab_size]
+    hf_state["lm_head.weight"] = lm_head_weight
     print(f"LM head: {hf_state['lm_head.weight'].shape}")
 
     return hf_state

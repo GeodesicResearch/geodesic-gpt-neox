@@ -170,6 +170,9 @@ def shard_for_tensor_parallelism(state_dict, tp_size, num_layers, config):
     For GQA models, the QKV weight has structure [Q_all, K_all, V_all] where Q and KV
     may have different sizes. Simple dim-0 chunking would incorrectly split across the
     Q/K/V boundary. Instead, we split each component separately and re-concatenate.
+
+    Embedding and output layers are padded so vocab_size is divisible by tp_size,
+    matching NeoX's VocabParallelEmbedding behavior.
     """
     if tp_size == 1:
         return [state_dict]
@@ -178,6 +181,19 @@ def shard_for_tensor_parallelism(state_dict, tp_size, num_layers, config):
     num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
     head_dim = config.hidden_size // num_heads
     use_gqa = num_kv_heads != num_heads
+
+    # Pad vocab-dimension tensors so they're divisible by tp_size
+    vocab_size = config.vocab_size
+    padded_vocab = ((vocab_size + tp_size - 1) // tp_size) * tp_size
+    if padded_vocab != vocab_size:
+        pad_rows = padded_vocab - vocab_size
+        print(f"Padding vocab from {vocab_size} to {padded_vocab} (+{pad_rows} rows) for TP={tp_size}")
+        for key in list(state_dict.keys()):
+            if "word_embeddings.weight" in key or "final_linear.weight" in key:
+                tensor = state_dict[key]
+                # Pad with zeros along dim 0 (vocab dimension)
+                padding = torch.zeros(pad_rows, tensor.shape[1], dtype=tensor.dtype)
+                state_dict[key] = torch.cat([tensor, padding], dim=0)
 
     sharded = [{} for _ in range(tp_size)]
 

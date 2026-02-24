@@ -48,9 +48,9 @@
   "precision": "bfloat16",
 
   # === PARALLELISM ===
-  # 32B model needs TP=8 to fit in memory (4 GPUs per node, 2 nodes)
+  # TP=4 on 1 node (4 GPUs x 95GB each, ~16GB model per GPU)
   "pipe_parallel_size": 1,
-  "model_parallel_size": 8,
+  "model_parallel_size": 4,
 
   # === EVALUATION ===
   "eval_tasks": ["mmlu"],
